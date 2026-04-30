@@ -76,38 +76,61 @@ enum NotchiTask: String, CaseIterable {
 }
 
 enum NotchiEmotion: String, CaseIterable {
-    case neutral, happy, sad, sob
+    case neutral, happy, elated, sad, sob
 
     var swayAmplitude: Double {
         switch self {
         case .neutral: return 0.5
         case .happy:   return 1.0
+        case .elated:  return 1.25
         case .sad:     return 0.25
         case .sob:     return 0.15
         }
     }
 }
 
+enum NotchiSpriteFamily: String {
+    case claude
+}
+
 struct NotchiState: Equatable {
     var task: NotchiTask
     var emotion: NotchiEmotion = .neutral
+    var spriteFamily: NotchiSpriteFamily = .claude
 
-    /// Resolves the sprite sheet name with fallback chain: exact emotion -> sad (for sob) -> neutral.
+    /// Resolves the sprite sheet name with fallback chain: exact emotion -> nearby base emotion -> neutral.
     var spriteSheetName: String {
-        let name = "\(task.spritePrefix)_\(emotion.rawValue)"
+        let name = spriteSheetName(for: emotion)
         if NSImage(named: name) != nil { return name }
+        if emotion == .elated {
+            let happyName = spriteSheetName(for: .happy)
+            if NSImage(named: happyName) != nil { return happyName }
+        }
         if emotion == .sob {
-            let sadName = "\(task.spritePrefix)_sad"
+            let sadName = spriteSheetName(for: .sad)
             if NSImage(named: sadName) != nil { return sadName }
         }
-        return "\(task.spritePrefix)_neutral"
+        return spriteSheetName(for: .neutral)
     }
-    var animationFPS: Double { task.animationFPS }
+
+    private func spriteSheetName(for emotion: NotchiEmotion) -> String {
+        "\(spriteFamily.rawValue)_\(task.spritePrefix)_\(emotion.rawValue)"
+    }
+
+    var animationFPS: Double {
+        switch emotion {
+        case .elated:
+            return max(task.animationFPS, 6.0)
+        default:
+            return task.animationFPS
+        }
+    }
     var bobDuration: Double { task.bobDuration }
     var bobAmplitude: CGFloat {
         switch emotion {
         case .sob: return 0
         case .sad: return task.bobAmplitude * 0.5
+        case .elated: return task.bobAmplitude * 1.2
         default:   return task.bobAmplitude
         }
     }
@@ -115,8 +138,17 @@ struct NotchiState: Equatable {
     var canWalk: Bool { emotion == .sob ? false : task.canWalk }
     var displayName: String { task.displayName }
     var walkFrequencyRange: ClosedRange<Double> { task.walkFrequencyRange }
-    var frameCount: Int { task.frameCount }
-    var columns: Int { task.columns }
+    var frameCount: Int { inferredFrameCount ?? task.frameCount }
+    var columns: Int { inferredFrameCount ?? task.columns }
+
+    private var inferredFrameCount: Int? {
+        guard let image = NSImage(named: spriteSheetName), image.size.height > 0 else {
+            return nil
+        }
+
+        let frameCount = Int((image.size.width / image.size.height).rounded())
+        return frameCount > 0 ? frameCount : nil
+    }
 
     static let idle = NotchiState(task: .idle)
     static let working = NotchiState(task: .working)
