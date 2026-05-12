@@ -98,6 +98,7 @@ struct AppSettings {
     private static let emotionAnalysisProviderKey = "emotionAnalysisProvider"
     private static let emotionAnalysisClaudeModelKey = "emotionAnalysisClaudeModel"
     private static let emotionAnalysisOpenAIModelKey = "emotionAnalysisOpenAIModel"
+    private static let lastUsedAgentProviderKey = "lastUsedAgentProvider"
 
     static var isUsageEnabled: Bool {
         get { UserDefaults.standard.bool(forKey: isUsageEnabledKey) }
@@ -107,6 +108,19 @@ struct AppSettings {
     static var hideSpriteWhenIdle: Bool {
         get { UserDefaults.standard.bool(forKey: hideSpriteWhenIdleKey) }
         set { UserDefaults.standard.set(newValue, forKey: hideSpriteWhenIdleKey) }
+    }
+
+    static var lastUsedAgentProvider: AgentProvider {
+        get {
+            guard let rawValue = UserDefaults.standard.string(forKey: lastUsedAgentProviderKey),
+                  let provider = AgentProvider(rawValue: rawValue) else {
+                return .claude
+            }
+            return provider
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: lastUsedAgentProviderKey)
+        }
     }
 
     static var claudeUsageRecoverySnapshot: ClaudeUsageRecoverySnapshot? {

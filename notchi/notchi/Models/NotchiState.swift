@@ -1,19 +1,16 @@
 import AppKit
 
 enum NotchiTask: String, CaseIterable {
-    case idle, working, sleeping, compacting, waiting
-
-    var animationFPS: Double {
-        switch self {
-        case .compacting: return 6.0
-        case .sleeping: return 2.0
-        case .idle, .waiting: return 3.0
-        case .working: return 4.0
-        }
-    }
+    case idle, working, sleeping, compacting, waiting, waving
 
     var loopDuration: Double {
-        Double(frameCount) / animationFPS
+        switch self {
+        case .compacting: return Double(frameCount) / 6.0
+        case .sleeping: return Double(frameCount) / 2.0
+        case .idle, .waiting: return Double(frameCount) / 3.0
+        case .working: return Double(frameCount) / 4.0
+        case .waving: return NotchiState.launchWaveDuration
+        }
     }
 
     var spritePrefix: String { rawValue }
@@ -24,12 +21,13 @@ enum NotchiTask: String, CaseIterable {
         case .idle, .waiting: return 1.5
         case .working:    return 0.4
         case .compacting: return 0.5
+        case .waving:     return 1.5
         }
     }
 
     var bobAmplitude: CGFloat {
         switch self {
-        case .sleeping, .compacting: return 0
+        case .sleeping, .compacting, .waving: return 0
         case .idle:                  return 1.5
         case .waiting:               return 0.5
         case .working:               return 0.5
@@ -38,7 +36,7 @@ enum NotchiTask: String, CaseIterable {
 
     var canWalk: Bool {
         switch self {
-        case .sleeping, .compacting, .waiting:
+        case .sleeping, .compacting, .waiting, .waving:
             return false
         case .idle, .working:
             return true
@@ -52,6 +50,7 @@ enum NotchiTask: String, CaseIterable {
         case .sleeping:   return "Sleeping"
         case .compacting: return "Compacting..."
         case .waiting:    return "Waiting..."
+        case .waving:     return "Waving"
         }
     }
 
@@ -61,12 +60,14 @@ enum NotchiTask: String, CaseIterable {
         case .idle:               return 8.0...15.0
         case .working:            return 5.0...12.0
         case .compacting:         return 15.0...25.0
+        case .waving:             return 30.0...60.0
         }
     }
 
     var frameCount: Int {
         switch self {
         case .compacting: return 5
+        case .waving: return 25
         default: return 6
         }
     }
@@ -74,6 +75,7 @@ enum NotchiTask: String, CaseIterable {
     var columns: Int {
         switch self {
         case .compacting: return 5
+        case .waving: return 25
         default: return 6
         }
     }
@@ -110,6 +112,7 @@ extension AgentProvider {
 }
 
 struct NotchiState: Equatable {
+    static let launchWaveDuration = 2.6
     private static let expressiveSpriteTargetFPS = 7.0
 
     var task: NotchiTask
@@ -154,6 +157,10 @@ struct NotchiState: Equatable {
     }
 
     private var loopDuration: Double {
+        if task == .waving {
+            return Self.launchWaveDuration
+        }
+
         if let targetFPS {
             return Double(frameCount) / targetFPS
         }
@@ -163,7 +170,7 @@ struct NotchiState: Equatable {
 
     private var targetFPS: Double? {
         if task == .compacting {
-            return task.animationFPS
+            return 6.0
         }
 
         switch (spriteFamily, task, emotion) {
@@ -208,4 +215,5 @@ struct NotchiState: Equatable {
     static let sleeping = NotchiState(task: .sleeping)
     static let compacting = NotchiState(task: .compacting)
     static let waiting = NotchiState(task: .waiting)
+    static let waving = NotchiState(task: .waving)
 }

@@ -3,6 +3,8 @@ import SwiftUI
 struct SessionSpriteView: View {
     let state: NotchiState
     let isSelected: Bool
+    var animationStartDate: Date = SpriteAnimationPhase.sharedLoopAnchor
+    var repeatsAnimation = true
 
     private var bobAmplitude: CGFloat {
         guard state.bobAmplitude > 0 else { return 0 }
@@ -18,7 +20,9 @@ struct SessionSpriteView: View {
                 frameCount: state.frameCount,
                 columns: state.columns,
                 fps: state.animationFPS,
-                isAnimating: true
+                isAnimating: true,
+                animationStartDate: animationStartDate,
+                repeatsAnimation: repeatsAnimation
             )
             .frame(width: 32, height: 32)
             .offset(

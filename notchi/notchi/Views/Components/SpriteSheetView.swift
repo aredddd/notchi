@@ -1,11 +1,18 @@
 import SwiftUI
 
+enum SpriteAnimationPhase {
+    // Anchor legacy looping callers to an absolute phase unless a one-shot animation provides its own start date.
+    static let sharedLoopAnchor = Date(timeIntervalSinceReferenceDate: 0)
+}
+
 struct SpriteSheetView: View {
     let spriteSheet: String
     var frameCount: Int = 6
     var columns: Int = 6
     var fps: Double = 10
     var isAnimating: Bool = true
+    var animationStartDate: Date = SpriteAnimationPhase.sharedLoopAnchor
+    var repeatsAnimation: Bool = true
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / fps, paused: !isAnimating)) { timeline in
@@ -20,8 +27,14 @@ struct SpriteSheetView: View {
 
     private func currentFrame(at date: Date) -> Int {
         guard isAnimating else { return 0 }
-        let elapsed = date.timeIntervalSinceReferenceDate
-        return Int(elapsed * fps) % frameCount
+        let elapsed = max(0, date.timeIntervalSince(animationStartDate))
+        let frame = Int(elapsed * fps)
+
+        if repeatsAnimation {
+            return frame % frameCount
+        }
+
+        return min(frame, frameCount - 1)
     }
 }
 

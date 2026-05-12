@@ -29,6 +29,12 @@ private enum SpriteHandoffTiming {
     }
 }
 
+private enum LaunchWaveTiming {
+    static let startDelay = 1.0
+    static let spriteScale: CGFloat = 1.2
+    static let horizontalOffset: CGFloat = 5
+}
+
 struct NotchContentView: View {
     private struct SpriteHandoff {
         enum Direction {
@@ -38,6 +44,33 @@ struct NotchContentView: View {
 
         let direction: Direction
         let sessionId: String
+    }
+
+    private struct LaunchWave {
+        let state: NotchiState
+        let startedAt: Date
+    }
+
+    private struct HeaderSpriteContent {
+        let state: NotchiState
+        let startedAt: Date
+        let repeatsAnimation: Bool
+        let scale: CGFloat
+        let xOffset: CGFloat
+
+        init(
+            state: NotchiState,
+            startedAt: Date = SpriteAnimationPhase.sharedLoopAnchor,
+            repeatsAnimation: Bool = true,
+            scale: CGFloat = 1,
+            xOffset: CGFloat = 0
+        ) {
+            self.state = state
+            self.startedAt = startedAt
+            self.repeatsAnimation = repeatsAnimation
+            self.scale = scale
+            self.xOffset = xOffset
+        }
     }
 
     var stateMachine: NotchiStateMachine = .shared
@@ -57,7 +90,10 @@ struct NotchContentView: View {
     @State private var spriteHandoffGeneration = 0
     @State private var launchGlowVisible = false
     @State private var launchGlowProgress: Double = 0
+    @State private var launchWave: LaunchWave?
+    @State private var launchSpriteFamily = AppSettings.lastUsedAgentProvider.spriteFamily
     @MainActor private static var hasPlayedLaunchGlow = false
+    @MainActor private static var hasPlayedLaunchWave = false
 
     private var sessionStore: SessionStore {
         stateMachine.sessionStore
@@ -71,11 +107,23 @@ struct NotchContentView: View {
     private var isExpanded: Bool { panelManager.isExpanded }
     private var collapsedMode: NotchPanelManager.CollapsedMode { panelManager.collapsedMode }
     private var isCompactIdle: Bool { !isExpanded && collapsedMode == .compactIdle }
-    private var collapsedHeaderState: NotchiState? {
-        Self.collapsedHeaderState(
-            activeSessionState: activeSession?.state,
-            isCompactIdle: isCompactIdle
-        )
+    private var headerSpriteContent: HeaderSpriteContent? {
+        if let activeSession {
+            return HeaderSpriteContent(state: activeSession.state)
+        }
+
+        if let launchWave {
+            return HeaderSpriteContent(
+                state: launchWave.state,
+                startedAt: launchWave.startedAt,
+                repeatsAnimation: false,
+                scale: LaunchWaveTiming.spriteScale,
+                xOffset: LaunchWaveTiming.horizontalOffset
+            )
+        }
+
+        guard !isCompactIdle else { return nil }
+        return HeaderSpriteContent(state: NotchiState(task: .idle, spriteFamily: launchSpriteFamily))
     }
     private var collapsedHoverHorizontalInset: CGFloat {
         !isExpanded && panelManager.isCollapsedHovered
@@ -283,6 +331,9 @@ struct NotchContentView: View {
         .animation(.easeInOut(duration: 0.18), value: collapsedMode)
         .animation(collapsedHoverAnimation, value: panelManager.isCollapsedHovered)
         .onAppear(perform: startLaunchGlow)
+        .task {
+            await startLaunchWave()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .notchiShouldCollapse)) { _ in
             panelManager.collapse()
         }
@@ -413,7 +464,7 @@ struct NotchContentView: View {
 
     @ViewBuilder
     private var headerRow: some View {
-        if isCompactIdle {
+        if isCompactIdle && launchWave == nil {
             Color.clear
                 .frame(width: compactContentWidth)
         } else {
@@ -433,18 +484,16 @@ struct NotchContentView: View {
 
     @ViewBuilder
     private var headerSprites: some View {
-        if let collapsedHeaderState {
+        if let headerSpriteContent {
             SessionSpriteView(
-                state: collapsedHeaderState,
-                isSelected: true
+                state: headerSpriteContent.state,
+                isSelected: true,
+                animationStartDate: headerSpriteContent.startedAt,
+                repeatsAnimation: headerSpriteContent.repeatsAnimation
             )
-            .scaleEffect(collapsedHeaderSpriteScale, anchor: .bottom)
+            .scaleEffect(collapsedHeaderSpriteScale * headerSpriteContent.scale, anchor: .bottom)
+            .offset(x: headerSpriteContent.xOffset)
         }
-    }
-
-    static func collapsedHeaderState(activeSessionState: NotchiState?, isCompactIdle: Bool) -> NotchiState? {
-        guard !isCompactIdle else { return nil }
-        return activeSessionState ?? .idle
     }
 
     private func startSpriteHandoff(for expanded: Bool) {
@@ -497,6 +546,27 @@ struct NotchContentView: View {
             try? await Task.sleep(for: .seconds(duration))
             launchGlowVisible = false
         }
+    }
+
+    private func startLaunchWave() async {
+        guard !Self.hasPlayedLaunchWave else { return }
+
+        let provider = AppSettings.lastUsedAgentProvider
+        launchSpriteFamily = provider.spriteFamily
+
+        try? await Task.sleep(for: .seconds(LaunchWaveTiming.startDelay))
+
+        guard !Task.isCancelled, !Self.hasPlayedLaunchWave else { return }
+        Self.hasPlayedLaunchWave = true
+        launchWave = LaunchWave(
+            state: NotchiState(task: .waving, spriteFamily: provider.spriteFamily),
+            startedAt: Date()
+        )
+
+        try? await Task.sleep(for: .seconds(NotchiState.launchWaveDuration))
+
+        guard !Task.isCancelled else { return }
+        launchWave = nil
     }
 
     private func toggleMute() {
