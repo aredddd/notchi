@@ -58,4 +58,48 @@ final class SessionDataTests: XCTestCase {
         XCTAssertEqual(claude.id, "claude:shared-session")
         XCTAssertEqual(codex.id, "codex:shared-session")
     }
+
+    func testStateUsesProviderSpecificSpriteFamily() {
+        let claude = SessionData(sessionId: "claude-session", provider: .claude, cwd: "/tmp/project")
+        let codex = SessionData(sessionId: "codex-session", provider: .codex, cwd: "/tmp/project")
+
+        XCTAssertEqual(claude.state.spriteFamily, .claude)
+        XCTAssertEqual(codex.state.spriteFamily, .codex)
+    }
+
+    func testMissingCodexEmotionSpriteFallsBackWithinCodexFamily() {
+        let state = NotchiState(task: .sleeping, emotion: .happy, spriteFamily: .codex)
+
+        XCTAssertEqual(state.spriteSheetName, "codex_sleeping_neutral")
+    }
+
+    func testSpriteSpecificAnimationFPS() {
+        let targetFPSCases: [(NotchiState, Double)] = [
+            (NotchiState(task: .compacting, spriteFamily: .claude), 6.0),
+            (NotchiState(task: .compacting, spriteFamily: .codex), 6.0),
+            (NotchiState(task: .idle, emotion: .elated, spriteFamily: .claude), 7.0),
+            (NotchiState(task: .idle, emotion: .happy, spriteFamily: .claude), 7.0),
+            (NotchiState(task: .idle, emotion: .elated, spriteFamily: .codex), 7.0),
+            (NotchiState(task: .idle, emotion: .happy, spriteFamily: .codex), 7.0),
+            (NotchiState(task: .working, emotion: .happy, spriteFamily: .codex), 7.0),
+            (NotchiState(task: .waving, spriteFamily: .claude), 25.0 / 2.6),
+            (NotchiState(task: .waving, spriteFamily: .codex), 25.0 / 2.6)
+        ]
+
+        for (state, expectedFPS) in targetFPSCases {
+            XCTAssertEqual(state.animationFPS, expectedFPS, accuracy: 0.0001, state.spriteSheetName)
+        }
+    }
+
+    func testWavingSpritesUseLaunchAssets() {
+        let claudeWave = NotchiState(task: .waving, spriteFamily: .claude)
+        let codexWave = NotchiState(task: .waving, spriteFamily: .codex)
+
+        XCTAssertEqual(claudeWave.spriteSheetName, "claude_waving_neutral")
+        XCTAssertEqual(codexWave.spriteSheetName, "codex_waving_neutral")
+        XCTAssertEqual(claudeWave.frameCount, 25)
+        XCTAssertEqual(codexWave.frameCount, 25)
+        XCTAssertEqual(claudeWave.columns, 25)
+        XCTAssertEqual(codexWave.columns, 25)
+    }
 }

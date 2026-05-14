@@ -74,6 +74,10 @@ final class SessionStore {
 
     func process(_ event: HookEvent, sessionStartTimeOverride: Date? = nil) -> SessionData {
         let isInteractive = event.interactive ?? true
+        // Remember the active provider so the next launch wave uses the last mascot.
+        if AppSettings.lastUsedAgentProvider != event.provider {
+            AppSettings.lastUsedAgentProvider = event.provider
+        }
         let session = getOrCreateSession(
             sessionKey: event.sessionKey,
             cwd: event.cwd,

@@ -14,6 +14,7 @@ final class EmotionState {
 
     static let sadThreshold = 0.45
     static let happyThreshold = 0.6
+    static let elatedEscalationThreshold = 0.9
     static let sobEscalationThreshold = 0.9
     static let intensityDampen = 0.5
     static let decayRate = 0.92
@@ -68,21 +69,27 @@ final class EmotionState {
     }
 
     private func updateCurrentEmotion() {
+        currentEmotion = Self.resolvedEmotion(for: scores)
+    }
+
+    static func resolvedEmotion(for scores: [NotchiEmotion: Double]) -> NotchiEmotion {
         let best = scores.max(by: { $0.value < $1.value })
 
         if let best {
             let threshold = best.key == .sad ? Self.sadThreshold : Self.happyThreshold
             if best.value >= threshold {
-                if best.key == .sad && best.value >= Self.sobEscalationThreshold {
-                    currentEmotion = .sob
+                if best.key == .happy && best.value >= Self.elatedEscalationThreshold {
+                    return .elated
+                } else if best.key == .sad && best.value >= Self.sobEscalationThreshold {
+                    return .sob
                 } else {
-                    currentEmotion = best.key
+                    return best.key
                 }
             } else {
-                currentEmotion = .neutral
+                return .neutral
             }
         } else {
-            currentEmotion = .neutral
+            return .neutral
         }
     }
 }

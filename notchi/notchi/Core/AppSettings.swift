@@ -39,6 +39,7 @@ enum EmotionAnalysisModel: String, CaseIterable, Identifiable {
     case claudeSonnet46 = "claude-sonnet-4-6"
     case openAIGPT54Nano = "gpt-5.4-nano"
     case openAIGPT54Mini = "gpt-5.4-mini"
+    case openAIGPT41Mini = "gpt-4.1-mini"
 
     var id: String { rawValue }
 
@@ -46,7 +47,7 @@ enum EmotionAnalysisModel: String, CaseIterable, Identifiable {
         switch self {
         case .claudeHaiku45, .claudeSonnet46:
             .claude
-        case .openAIGPT54Nano, .openAIGPT54Mini:
+        case .openAIGPT54Nano, .openAIGPT54Mini, .openAIGPT41Mini:
             .openAI
         }
     }
@@ -61,11 +62,18 @@ enum EmotionAnalysisModel: String, CaseIterable, Identifiable {
             "GPT-5.4 nano"
         case .openAIGPT54Mini:
             "GPT-5.4 mini"
+        case .openAIGPT41Mini:
+            "GPT-4.1 mini"
         }
     }
 
     static func models(for provider: EmotionAnalysisProvider) -> [EmotionAnalysisModel] {
-        allCases.filter { $0.provider == provider }
+        switch provider {
+        case .claude:
+            [.claudeHaiku45, .claudeSonnet46]
+        case .openAI:
+            [.openAIGPT54Mini, .openAIGPT54Nano, .openAIGPT41Mini]
+        }
     }
 
     static func defaultModel(for provider: EmotionAnalysisProvider) -> EmotionAnalysisModel {
@@ -73,7 +81,7 @@ enum EmotionAnalysisModel: String, CaseIterable, Identifiable {
         case .claude:
             .claudeHaiku45
         case .openAI:
-            .openAIGPT54Nano
+            .openAIGPT54Mini
         }
     }
 }
@@ -90,6 +98,7 @@ struct AppSettings {
     private static let emotionAnalysisProviderKey = "emotionAnalysisProvider"
     private static let emotionAnalysisClaudeModelKey = "emotionAnalysisClaudeModel"
     private static let emotionAnalysisOpenAIModelKey = "emotionAnalysisOpenAIModel"
+    private static let lastUsedAgentProviderKey = "lastUsedAgentProvider"
 
     static var isUsageEnabled: Bool {
         get { UserDefaults.standard.bool(forKey: isUsageEnabledKey) }
@@ -99,6 +108,19 @@ struct AppSettings {
     static var hideSpriteWhenIdle: Bool {
         get { UserDefaults.standard.bool(forKey: hideSpriteWhenIdleKey) }
         set { UserDefaults.standard.set(newValue, forKey: hideSpriteWhenIdleKey) }
+    }
+
+    static var lastUsedAgentProvider: AgentProvider {
+        get {
+            guard let rawValue = UserDefaults.standard.string(forKey: lastUsedAgentProviderKey),
+                  let provider = AgentProvider(rawValue: rawValue) else {
+                return .claude
+            }
+            return provider
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: lastUsedAgentProviderKey)
+        }
     }
 
     static var claudeUsageRecoverySnapshot: ClaudeUsageRecoverySnapshot? {
