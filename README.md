@@ -54,6 +54,7 @@ If you have any bugs, ideas, or would like to contribute through pull requests, 
 ## Community Ports
 
 - [notchi-for-windows](https://github.com/AptatoX/notchi-for-windows) by [@AptatoX](https://github.com/AptatoX), a community-made Windows port of Notchi
+- [pixel-companion](https://github.com/Emi-Dz/pixel-companion) by [@Emi-Dz](https://github.com/Emi-Dz), a community-made Windows desktop companion inspired by Notchi
 
 ## Credits
 
