@@ -357,6 +357,20 @@ private final class UnixSocketClient {
             throw posixError(code: errno, message: "Failed to create client socket")
         }
 
+        var noSigPipe: Int32 = 1
+        let signalPipeResult = setsockopt(
+            fileDescriptor,
+            SOL_SOCKET,
+            SO_NOSIGPIPE,
+            &noSigPipe,
+            socklen_t(MemoryLayout<Int32>.size)
+        )
+        guard signalPipeResult == 0 else {
+            let socketOptionError = errno
+            closeConnection()
+            throw posixError(code: socketOptionError, message: "Failed to disable SIGPIPE")
+        }
+
         var addr = sockaddr_un()
         addr.sun_family = sa_family_t(AF_UNIX)
         path.withCString { ptr in
