@@ -6,30 +6,11 @@ private enum HookInstallBadgeState {
     case notInstalled
     case providerMissing
     case error
+}
 
-    func text(for provider: AgentProvider) -> String {
-        switch self {
-        case .installed:
-            "Installed"
-        case .notInstalled:
-            "Not Installed"
-        case .providerMissing:
-            "\(provider.displayName) Missing"
-        case .error:
-            "Error"
-        }
-    }
-
-    var color: Color {
-        switch self {
-        case .installed:
-            TerminalColors.green
-        case .providerMissing:
-            TerminalColors.amber
-        case .notInstalled, .error:
-            TerminalColors.red
-        }
-    }
+private struct HookStatusBadge {
+    let text: String
+    let color: Color
 }
 
 struct PanelSettingsView: View {
@@ -40,6 +21,7 @@ struct PanelSettingsView: View {
     @State private var claudeHooksError = false
     @State private var codexHooksInstalled = IntegrationCoordinator.shared.isInstalled(for: .codex)
     @State private var codexHooksError = false
+    @State private var areHooksExpanded = false
     @ObservedObject private var updateManager = UpdateManager.shared
     private var usageConnected: Bool { ClaudeUsageService.shared.isConnected }
 
@@ -77,7 +59,7 @@ struct PanelSettingsView: View {
                 VStack(alignment: .leading, spacing: SettingsLayout.sectionSpacing) {
                     systemSection
                     Divider().background(Color.white.opacity(0.08))
-                    aiSection
+                    integrationsSection
                     Divider().background(Color.white.opacity(0.08))
                     aboutSection
                 }
@@ -113,27 +95,26 @@ struct PanelSettingsView: View {
         }
     }
 
-    private var aiSection: some View {
+    private var integrationsSection: some View {
         VStack(alignment: .leading, spacing: SettingsLayout.sectionSpacing) {
-            Button(action: { installHooksIfNeeded(for: .claude) }) {
-                SettingsRowView(icon: "terminal", title: "Claude Hooks") {
-                    statusBadge(
-                        hookStatusText(for: .claude, installed: claudeHooksInstalled, error: claudeHooksError),
-                        color: hookStatusColor(for: .claude, installed: claudeHooksInstalled, error: claudeHooksError)
-                    )
+            Button(action: toggleHooksExpanded) {
+                SettingsRowView(icon: "terminal", title: "Agent Hooks") {
+                    HStack(spacing: 6) {
+                        if !areHooksExpanded {
+                            let status = hooksSummaryStatus()
+                            statusBadge(status)
+                        }
+                        Image(systemName: areHooksExpanded ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundColor(TerminalColors.dimmedText)
+                    }
                 }
             }
             .buttonStyle(.plain)
 
-            Button(action: { installHooksIfNeeded(for: .codex) }) {
-                SettingsRowView(icon: "terminal", title: "Codex Hooks") {
-                    statusBadge(
-                        hookStatusText(for: .codex, installed: codexHooksInstalled, error: codexHooksError),
-                        color: hookStatusColor(for: .codex, installed: codexHooksInstalled, error: codexHooksError)
-                    )
-                }
+            if areHooksExpanded {
+                hooksProviderList
             }
-            .buttonStyle(.plain)
 
             Button(action: connectUsage) {
                 SettingsRowView(icon: "gauge.with.dots.needle.33percent", title: "Claude Usage") {
@@ -147,6 +128,35 @@ struct PanelSettingsView: View {
 
             emotionAnalysisRow
         }
+    }
+
+    private var hooksProviderList: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            hookProviderRow(for: .claude, installed: claudeHooksInstalled, error: claudeHooksError)
+            hookProviderRow(for: .codex, installed: codexHooksInstalled, error: codexHooksError)
+        }
+        .padding(.vertical, SettingsLayout.pickerInset)
+        .background(TerminalColors.subtleBackground)
+        .cornerRadius(8)
+    }
+
+    private func hookProviderRow(for provider: AgentProvider, installed: Bool, error: Bool) -> some View {
+        Button(action: { installHooksIfNeeded(for: provider) }) {
+            HStack(spacing: 8) {
+                Text(provider.displayName)
+                    .font(.system(size: 11))
+                    .foregroundColor(TerminalColors.primaryText)
+
+                Spacer()
+
+                let status = hookProviderStatus(for: provider, installed: installed, error: error)
+                statusBadge(status)
+            }
+            .padding(.horizontal, SettingsLayout.pickerOptionHorizontalPadding)
+            .padding(.vertical, SettingsLayout.pickerOptionVerticalPadding)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private var emotionAnalysisRow: some View {
@@ -237,6 +247,12 @@ struct PanelSettingsView: View {
         hideSpriteWhenIdle.toggle()
     }
 
+    private func toggleHooksExpanded() {
+        withAnimation(.spring(response: 0.3)) {
+            areHooksExpanded.toggle()
+        }
+    }
+
     private func handleUpdatesAction() {
         if case .upToDate = updateManager.state {
             openLatestReleasePage()
@@ -245,21 +261,68 @@ struct PanelSettingsView: View {
         }
     }
 
-    private func hookStatusText(for provider: AgentProvider, installed: Bool, error: Bool) -> String {
-        hookStatus(for: provider, installed: installed, error: error).text(for: provider)
-    }
-
-    private func hookStatusColor(for provider: AgentProvider, installed: Bool, error: Bool) -> Color {
-        hookStatus(for: provider, installed: installed, error: error).color
-    }
-
     private func hookStatus(for provider: AgentProvider, installed: Bool, error: Bool) -> HookInstallBadgeState {
         guard IntegrationCoordinator.shared.isProviderAvailable(for: provider) else {
             return .providerMissing
         }
+        return hookStatus(installed: installed, error: error)
+    }
+
+    private func hookStatus(installed: Bool, error: Bool) -> HookInstallBadgeState {
         if error { return .error }
         if installed { return .installed }
         return .notInstalled
+    }
+
+    private func hooksSummaryStatus() -> HookStatusBadge {
+        let states = availableHookStates()
+
+        guard !states.isEmpty else {
+            return HookStatusBadge(text: "Unavailable", color: TerminalColors.amber)
+        }
+
+        if states.contains(.error) {
+            return HookStatusBadge(text: "Error", color: TerminalColors.red)
+        }
+
+        let installedCount = states.filter { $0 == .installed }.count
+        if installedCount == states.count {
+            return HookStatusBadge(text: "Installed", color: TerminalColors.green)
+        }
+
+        if installedCount > 0 {
+            return HookStatusBadge(text: "Partial", color: TerminalColors.amber)
+        }
+
+        return HookStatusBadge(text: "Set Up", color: TerminalColors.red)
+    }
+
+    private func availableHookStates() -> [HookInstallBadgeState] {
+        AgentProvider.allCases.compactMap { provider in
+            guard IntegrationCoordinator.shared.isProviderAvailable(for: provider) else {
+                return nil
+            }
+
+            switch provider {
+            case .claude:
+                return hookStatus(installed: claudeHooksInstalled, error: claudeHooksError)
+            case .codex:
+                return hookStatus(installed: codexHooksInstalled, error: codexHooksError)
+            }
+        }
+    }
+
+    private func hookProviderStatus(for provider: AgentProvider, installed: Bool, error: Bool) -> HookStatusBadge {
+        switch hookStatus(for: provider, installed: installed, error: error) {
+        case .installed:
+            HookStatusBadge(text: "Installed", color: TerminalColors.green)
+        case .notInstalled:
+            HookStatusBadge(text: "Install", color: TerminalColors.red)
+        case .providerMissing:
+            HookStatusBadge(text: "Not Found", color: TerminalColors.amber)
+        case .error:
+            HookStatusBadge(text: "Error", color: TerminalColors.red)
+        }
     }
 
     private func installHooksIfNeeded(for provider: AgentProvider) {
@@ -308,6 +371,10 @@ struct PanelSettingsView: View {
             .background(color.opacity(0.15))
             .cornerRadius(4)
             .frame(maxWidth: 160, alignment: .trailing)
+    }
+
+    private func statusBadge(_ status: HookStatusBadge) -> some View {
+        statusBadge(status.text, color: status.color)
     }
 
     private func emotionAnalysisStatus() -> (text: String, color: Color) {

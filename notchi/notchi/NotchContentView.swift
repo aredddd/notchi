@@ -431,15 +431,22 @@ struct NotchContentView: View {
 
     private var headerButtons: some View {
         HStack(spacing: 8) {
-            PanelHeaderButton(
-                sfSymbol: "gearshape",
-                showsIndicator: updateManager.hasPendingUpdate,
-                action: {
-                    haptics.playNavigationTap()
-                    showingPanelSettingsDetail = false
-                    showingPanelSettings = true
-                }
-            )
+            if !showingPanelSettings {
+                PanelHeaderButton(
+                    sfSymbol: "gearshape",
+                    showsIndicator: updateManager.hasPendingUpdate,
+                    action: {
+                        haptics.playNavigationTap()
+                        showingPanelSettingsDetail = false
+                        showingPanelSettings = true
+                    }
+                )
+            } else {
+                PanelHeaderButton(
+                    sfSymbol: panelManager.isPinned ? "pin.fill" : "pin",
+                    action: { panelManager.togglePin() }
+                )
+            }
             PanelHeaderButton(sfSymbol: "xmark", action: { panelManager.collapse() })
         }
         .padding(.trailing, 8)
