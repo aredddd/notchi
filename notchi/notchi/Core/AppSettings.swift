@@ -279,7 +279,7 @@ struct AppSettings {
     }
 
     static func importCustomNotificationSound(from sourceURL: URL) throws -> CustomNotificationSound {
-        let directory = try customNotificationSoundsDirectory()
+        let directory = customNotificationSoundsDirectory()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
         let displayName = sourceURL.deletingPathExtension().lastPathComponent
@@ -299,8 +299,8 @@ struct AppSettings {
         return sound
     }
 
-    static func customNotificationSoundURL(for sound: CustomNotificationSound) -> URL? {
-        try? customNotificationSoundsDirectory().appendingPathComponent(sound.fileName)
+    static func customNotificationSoundURL(for sound: CustomNotificationSound) -> URL {
+        customNotificationSoundsDirectory().appendingPathComponent(sound.fileName)
     }
 
     static func renameCustomNotificationSound(id: UUID, displayName: String) {
@@ -316,8 +316,8 @@ struct AppSettings {
     }
 
     static func deleteCustomNotificationSound(id: UUID) {
-        if let sound = customNotificationSounds.first(where: { $0.id == id }),
-           let url = customNotificationSoundURL(for: sound) {
+        if let sound = customNotificationSounds.first(where: { $0.id == id }) {
+            let url = customNotificationSoundURL(for: sound)
             try? FileManager.default.removeItem(at: url)
         }
 
@@ -326,7 +326,7 @@ struct AppSettings {
         previousSoundSelection = previousSoundSelection?.fallbackIfDeletingCustomSound(id: id)
     }
 
-    private static func customNotificationSoundsDirectory() throws -> URL {
+    private static func customNotificationSoundsDirectory() -> URL {
         let applicationSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         return applicationSupport
             .appendingPathComponent("Notchi", isDirectory: true)

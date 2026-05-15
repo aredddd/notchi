@@ -63,11 +63,11 @@ final class SoundService {
             guard let soundName = sound.soundName else { return }
             playSystemSound(named: soundName)
         case .custom(let id):
-            guard let customSound = AppSettings.customNotificationSounds.first(where: { $0.id == id }),
-                  let url = AppSettings.customNotificationSoundURL(for: customSound) else {
+            guard let customSound = AppSettings.customNotificationSounds.first(where: { $0.id == id }) else {
                 logger.warning("Custom sound not found: \(id.uuidString, privacy: .public)")
                 return
             }
+            let url = AppSettings.customNotificationSoundURL(for: customSound)
             playCustomSound(id: id, url: url)
         }
     }
@@ -85,21 +85,20 @@ final class SoundService {
         do {
             let player = try AVAudioPlayer(contentsOf: url)
             player.prepareToPlay()
-            activeCustomPlayers[id] = player
+            let playbackID = UUID()
+            activeCustomPlayers[playbackID] = player
             player.play()
             logger.debug("Playing custom sound: \(url.lastPathComponent, privacy: .public)")
 
             let nanoseconds = UInt64((max(player.duration, 0.1) + 0.5) * 1_000_000_000)
             Task { [weak self, weak player] in
                 try? await Task.sleep(nanoseconds: nanoseconds)
-                await MainActor.run {
-                    guard let self,
-                          let player,
-                          self.activeCustomPlayers[id] === player else {
-                        return
-                    }
-                    self.activeCustomPlayers[id] = nil
+                guard let self,
+                      let player,
+                      self.activeCustomPlayers[playbackID] === player else {
+                    return
                 }
+                self.activeCustomPlayers[playbackID] = nil
             }
         } catch {
             logger.warning("Failed to play custom sound: \(error.localizedDescription, privacy: .public)")
