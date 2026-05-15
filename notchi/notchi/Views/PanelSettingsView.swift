@@ -8,7 +8,7 @@ private enum HookInstallBadgeState {
     case error
 }
 
-private struct HookStatusBadge {
+private struct StatusBadge {
     let text: String
     let color: Color
 }
@@ -117,11 +117,9 @@ struct PanelSettingsView: View {
             }
 
             Button(action: connectUsage) {
-                SettingsRowView(icon: "gauge.with.dots.needle.33percent", title: "Claude Usage") {
-                    statusBadge(
-                        usageConnected ? "Connected" : "Not Connected",
-                        color: usageConnected ? TerminalColors.green : TerminalColors.red
-                    )
+                SettingsRowView(icon: "gauge.with.dots.needle.33percent", title: "Usage") {
+                    let status = usageStatus()
+                    statusBadge(status)
                 }
             }
             .buttonStyle(.plain)
@@ -274,27 +272,27 @@ struct PanelSettingsView: View {
         return .notInstalled
     }
 
-    private func hooksSummaryStatus() -> HookStatusBadge {
+    private func hooksSummaryStatus() -> StatusBadge {
         let states = availableHookStates()
 
         guard !states.isEmpty else {
-            return HookStatusBadge(text: "Unavailable", color: TerminalColors.amber)
+            return StatusBadge(text: "Unavailable", color: TerminalColors.amber)
         }
 
         if states.contains(.error) {
-            return HookStatusBadge(text: "Error", color: TerminalColors.red)
+            return StatusBadge(text: "Error", color: TerminalColors.red)
         }
 
         let installedCount = states.filter { $0 == .installed }.count
         if installedCount == states.count {
-            return HookStatusBadge(text: "Installed", color: TerminalColors.green)
+            return StatusBadge(text: "Installed", color: TerminalColors.green)
         }
 
         if installedCount > 0 {
-            return HookStatusBadge(text: "Partial", color: TerminalColors.amber)
+            return StatusBadge(text: "Partial", color: TerminalColors.amber)
         }
 
-        return HookStatusBadge(text: "Set Up", color: TerminalColors.red)
+        return StatusBadge(text: "Set Up", color: TerminalColors.amber)
     }
 
     private func availableHookStates() -> [HookInstallBadgeState] {
@@ -312,17 +310,23 @@ struct PanelSettingsView: View {
         }
     }
 
-    private func hookProviderStatus(for provider: AgentProvider, installed: Bool, error: Bool) -> HookStatusBadge {
+    private func hookProviderStatus(for provider: AgentProvider, installed: Bool, error: Bool) -> StatusBadge {
         switch hookStatus(for: provider, installed: installed, error: error) {
         case .installed:
-            HookStatusBadge(text: "Installed", color: TerminalColors.green)
+            StatusBadge(text: "Installed", color: TerminalColors.green)
         case .notInstalled:
-            HookStatusBadge(text: "Install", color: TerminalColors.red)
+            StatusBadge(text: "Install", color: TerminalColors.amber)
         case .providerMissing:
-            HookStatusBadge(text: "Not Found", color: TerminalColors.amber)
+            StatusBadge(text: "Not Found", color: TerminalColors.amber)
         case .error:
-            HookStatusBadge(text: "Error", color: TerminalColors.red)
+            StatusBadge(text: "Error", color: TerminalColors.red)
         }
+    }
+
+    private func usageStatus() -> StatusBadge {
+        usageConnected
+            ? StatusBadge(text: "Connected", color: TerminalColors.green)
+            : StatusBadge(text: "Set Up", color: TerminalColors.amber)
     }
 
     private func installHooksIfNeeded(for provider: AgentProvider) {
@@ -373,7 +377,7 @@ struct PanelSettingsView: View {
             .frame(maxWidth: 160, alignment: .trailing)
     }
 
-    private func statusBadge(_ status: HookStatusBadge) -> some View {
+    private func statusBadge(_ status: StatusBadge) -> some View {
         statusBadge(status.text, color: status.color)
     }
 
