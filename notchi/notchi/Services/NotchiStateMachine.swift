@@ -165,9 +165,6 @@ final class NotchiStateMachine {
             pendingPositionMarks.removeValue(forKey: event.sessionKey)?.cancel()
             SoundService.shared.clearCooldown(for: event.sessionKey)
             Task { await ConversationParser.shared.resetState(for: event.sessionKey) }
-            if sessionStore.activeSessionCount == 0 {
-                logger.info("Global state: idle")
-            }
             refreshCodexProcessMonitoring()
             refreshCodexThreadMetadataMonitoring()
             return
@@ -314,9 +311,6 @@ final class NotchiStateMachine {
         }
 
         for session in endedSessions {
-            logger.info(
-                "Codex CLI process \(session.codexProcessId ?? -1, privacy: .public) exited; ending session \(session.sessionKey.stableId, privacy: .public)"
-            )
             codexProcessMissCounts.removeValue(forKey: session.sessionKey)
             handleEvent(
                 HookEvent(
@@ -342,9 +336,6 @@ final class NotchiStateMachine {
 
     private func endCodexArchivedSessions(_ sessions: [SessionData]) {
         for session in sessions {
-            logger.info(
-                "Codex thread archived; ending session \(session.sessionKey.stableId, privacy: .public)"
-            )
             // WHY: Route archive removal through the normal SessionEnd path so
             // watcher/parser/sound cleanup stays identical to a real end event.
             handleEvent(
@@ -392,13 +383,11 @@ final class NotchiStateMachine {
 
         source.resume()
         fileWatchers[sessionKey] = (source: source, fd: fd)
-        logger.debug("Started file watcher for session \(sessionKey.stableId, privacy: .public)")
     }
 
     private func stopFileWatcher(sessionKey: ProviderSessionKey) {
         guard let watcher = fileWatchers.removeValue(forKey: sessionKey) else { return }
         watcher.source.cancel()
-        logger.debug("Stopped file watcher for session \(sessionKey.stableId, privacy: .public)")
     }
 
     private func startEmotionDecayTimer() {

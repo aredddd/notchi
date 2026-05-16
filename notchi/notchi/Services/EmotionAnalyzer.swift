@@ -35,7 +35,6 @@ struct ClaudeSettingsConfig {
     }
 
     nonisolated static func parse(from data: Data) throws -> ClaudeSettingsConfig? {
-        let logger = Logger(subsystem: "com.ruban.notchi", category: "EmotionAnalyzer")
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         let env = json?["env"] as? [String: String] ?? [:]
 
@@ -46,7 +45,6 @@ struct ClaudeSettingsConfig {
         guard let authToken = env["ANTHROPIC_AUTH_TOKEN"]?.trimmingCharacters(in: .whitespacesAndNewlines),
               !authToken.isEmpty,
               let apiURL = buildMessagesURL(from: resolvedBaseURL) else {
-            logger.debug("Claude settings present but missing valid auth token or base URL")
             return nil
         }
 
@@ -227,7 +225,6 @@ private struct ClaudeEmotionAnalysisProvider: EmotionAnalysisProviding {
             throw EmotionAnalysisRequestError.invalidResponse
         }
 
-        logger.debug("Claude raw response: \(text, privacy: .private)")
         return try EmotionAnalysisResponseParser.parse(text)
     }
 }
@@ -295,7 +292,6 @@ private struct OpenAIEmotionAnalysisProvider: EmotionAnalysisProviding {
             throw EmotionAnalysisRequestError.invalidResponse
         }
 
-        logger.debug("OpenAI raw response: \(text, privacy: .private)")
         return try EmotionAnalysisResponseParser.parse(text)
     }
 }
@@ -324,17 +320,13 @@ final class EmotionAnalyzer {
     }
 
     func analyze(prompt: String, using provider: EmotionAnalysisProviding?) async -> (emotion: String, intensity: Double)? {
-        let start = ContinuousClock.now
-
         guard let provider else {
-            logger.info("No emotion analysis configuration available; skipping prompt emotion update")
             return nil
         }
 
+        let start = ContinuousClock.now
         do {
             let result = try await provider.analyze(prompt: prompt, systemPrompt: Self.systemPrompt)
-            let elapsed = ContinuousClock.now - start
-            logger.info("\(provider.providerName, privacy: .public) analysis took \(elapsed, privacy: .public)")
             return result
         } catch {
             let elapsed = ContinuousClock.now - start

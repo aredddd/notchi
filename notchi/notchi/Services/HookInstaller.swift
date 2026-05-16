@@ -38,7 +38,6 @@ struct HookInstaller {
                     [.posixPermissions: 0o755],
                     ofItemAtPath: hookScript.path
                 )
-                logger.info("Installed hook script to \(hookScript.path, privacy: .public)")
             } catch {
                 logger.error("Failed to install hook script: \(error.localizedDescription)")
                 return false
@@ -136,7 +135,6 @@ struct HookInstaller {
 
         do {
             try data.write(to: settingsURL)
-            logger.info("Updated settings.json with Notchi hooks")
             return true
         } catch {
             logger.error("Failed to write settings.json: \(error.localizedDescription)")
@@ -220,7 +218,5 @@ struct HookInstaller {
         ) {
             try? data.write(to: settings)
         }
-
-        logger.info("Uninstalled Notchi hooks")
     }
 }

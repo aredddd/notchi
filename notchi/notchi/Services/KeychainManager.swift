@@ -1,8 +1,5 @@
 import Foundation
-import os.log
 import Security
-
-private let logger = Logger(subsystem: "com.ruban.notchi", category: "KeychainManager")
 
 struct ClaudeOAuthCredentials: Equatable {
     let accessToken: String
@@ -105,7 +102,6 @@ enum KeychainManager {
     static func getOAuthCredentials(allowInteraction: Bool) -> ClaudeOAuthCredentials? {
         let now = currentDate()
         if let cached = recentCredentialCache(at: now) {
-            logger.info("Claude credentials resolved via recent in-memory cache (\(cached.source, privacy: .public))")
             return cached.credentials
         }
 
@@ -115,22 +111,17 @@ enum KeychainManager {
                let credentials = decodeClaudeOAuthCredentials(from: json) {
                 cacheRecentCredential(credentials, source: "/usr/bin/security CLI", at: now)
                 clearSecurityCLIBackoff()
-                logger.debug("Claude credentials resolved via /usr/bin/security CLI")
                 return credentials
             }
             recordSecurityCLIFailure(at: now)
-        } else {
-            logger.info("Skipping /usr/bin/security CLI due to recent failure cooldown")
         }
 
         // Fallback: Security.framework using the caller's interaction policy.
         guard let json = readClaudeCodeKeychain(allowInteraction: allowInteraction),
               let credentials = decodeClaudeOAuthCredentials(from: json) else {
-            logger.info("Claude credentials not found")
             return nil
         }
         cacheRecentCredential(credentials, source: "Security.framework", at: now)
-        logger.info("Claude credentials resolved via Security.framework")
         return credentials
     }
 

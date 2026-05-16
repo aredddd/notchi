@@ -1,8 +1,4 @@
 import Foundation
-import os.log
-
-private let logger = Logger(subsystem: "com.ruban.notchi", category: "SessionData")
-
 struct PendingQuestion {
     let question: String
     let header: String?
@@ -222,7 +218,6 @@ final class SessionData: Identifiable {
             codexCompactionSignal = nil
         }
         lastActivity = now
-        logger.debug("Setting promptSubmitTime to: \(now)")
     }
 
     func advanceSpinnerVerbForReply() {

@@ -19,25 +19,21 @@ final class SoundService {
 
     func playNotificationSound(sessionKey: ProviderSessionKey, isInteractive: Bool) {
         guard isInteractive else {
-            logger.debug("Non-interactive session, skipping sound")
             return
         }
 
         let selection = AppSettings.notificationSoundSelection
         guard selection != .system(.none) else {
-            logger.debug("Notification sound disabled")
             return
         }
 
         if TerminalFocusDetector.isTerminalFocused() {
-            logger.debug("Terminal focused, skipping notification sound")
             return
         }
 
         let now = Date()
         if let lastPlayed = lastSoundTimes[sessionKey],
            now.timeIntervalSince(lastPlayed) < Self.cooldown {
-            logger.debug("Sound cooldown active for session \(sessionKey.stableId, privacy: .public)")
             return
         }
 
@@ -78,7 +74,6 @@ final class SoundService {
             return
         }
         nsSound.play()
-        logger.debug("Playing sound: \(soundName, privacy: .public)")
     }
 
     private func playCustomSound(id: UUID, url: URL) {
@@ -88,7 +83,6 @@ final class SoundService {
             let playbackID = UUID()
             activeCustomPlayers[playbackID] = player
             player.play()
-            logger.debug("Playing custom sound: \(url.lastPathComponent, privacy: .public)")
 
             let nanoseconds = UInt64((max(player.duration, 0.1) + 0.5) * 1_000_000_000)
             Task { [weak self, weak player] in

@@ -1,5 +1,8 @@
 import ServiceManagement
 import SwiftUI
+import os.log
+
+private let logger = Logger(subsystem: "com.ruban.notchi", category: "PanelSettingsView")
 
 private enum HookInstallBadgeState {
     case installed
@@ -282,7 +285,7 @@ struct PanelSettingsView: View {
             }
             launchAtLogin = SMAppService.mainApp.status == .enabled
         } catch {
-            print("Failed to toggle launch at login: \(error)")
+            logger.error("Failed to toggle launch at login: \(error.localizedDescription, privacy: .public)")
         }
     }
 

@@ -1,7 +1,4 @@
 import Foundation
-import os.log
-
-private let logger = Logger(subsystem: "com.ruban.notchi", category: "SessionStore")
 
 extension Notification.Name {
     static let sessionStoreActiveSessionCountDidChange = Notification.Name("sessionStoreActiveSessionCountDidChange")
@@ -59,7 +56,6 @@ final class SessionStore {
     func selectSession(_ sessionKey: ProviderSessionKey) {
         guard sessions[sessionKey] != nil else { return }
         selectedSessionKey = sessionKey
-        logger.info("Selected session: \(sessionKey.stableId, privacy: .public)")
     }
 
     func selectSession(matchingStableId stableId: String) {
@@ -69,7 +65,6 @@ final class SessionStore {
 
     func clearSelectedSession() {
         selectedSessionKey = nil
-        logger.info("Selected session: nil")
     }
 
     func process(_ event: HookEvent, sessionStartTimeOverride: Date? = nil) -> SessionData {
@@ -192,9 +187,6 @@ final class SessionStore {
         )
         sessions[sessionKey] = session
         recomputeDisplaySessionNumbers()
-        logger.info(
-            "Created \(session.provider.rawValue, privacy: .public) session #\(self.displaySessionNumber(for: session)): \(session.rawSessionId, privacy: .public) at \(cwd, privacy: .public)"
-        )
         postActiveSessionCountChange()
 
         if activeSessionCount == 1 {
@@ -209,7 +201,6 @@ final class SessionStore {
     private func removeSession(_ sessionKey: ProviderSessionKey) {
         sessions.removeValue(forKey: sessionKey)
         recomputeDisplaySessionNumbers()
-        logger.info("Removed session: \(sessionKey.stableId, privacy: .public)")
         postActiveSessionCountChange()
 
         if selectedSessionKey == sessionKey {

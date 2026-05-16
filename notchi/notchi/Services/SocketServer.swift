@@ -246,7 +246,6 @@ nonisolated final class SocketServer: @unchecked Sendable {
             return
         }
 
-        logEvent(event)
         eventHandler?(event)
     }
 
@@ -354,25 +353,6 @@ nonisolated final class SocketServer: @unchecked Sendable {
         )
     }
 
-    private func logEvent(_ event: AgentHookEnvelope) {
-        switch event.event {
-        case "SessionStart":
-            logger.info("\(event.provider.rawValue, privacy: .public) session started")
-        case "SessionEnd":
-            logger.info("\(event.provider.rawValue, privacy: .public) session ended")
-        case "PreToolUse":
-            let tool = event.tool ?? "unknown"
-            logger.info("\(event.provider.rawValue, privacy: .public) tool: \(tool, privacy: .public)")
-        case "PostToolUse":
-            let tool = event.tool ?? "unknown"
-            let success = event.status != "error"
-            logger.info("\(event.provider.rawValue, privacy: .public) result: \(success ? "✓" : "✗", privacy: .public) \(tool, privacy: .public)")
-        case "Stop", "SubagentStop":
-            logger.info("\(event.provider.rawValue, privacy: .public) done")
-        default:
-            break
-        }
-    }
 }
 
 private enum SocketReadiness {

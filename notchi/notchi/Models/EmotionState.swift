@@ -31,7 +31,7 @@ final class EmotionState {
 
     init() {}
 
-    func recordEmotion(_ rawEmotion: String, intensity: Double, prompt: String) {
+    func recordEmotion(_ rawEmotion: String, intensity: Double, prompt _: String) {
         let emotion = NotchiEmotion(rawValue: rawEmotion)
 
         if let emotion, emotion != .neutral {
@@ -48,9 +48,9 @@ final class EmotionState {
         }
 
         updateCurrentEmotion()
-
-        let truncatedPrompt = String(prompt.prefix(60))
-        logger.info("[Emotion] \"\(truncatedPrompt, privacy: .public)\" → detected: \(rawEmotion, privacy: .public) (\(String(format: "%.2f", intensity), privacy: .public)) → cumulative: {\(self.scoresDescription, privacy: .public)}")
+        logger.info(
+            "Emotion analysis: detected \(rawEmotion, privacy: .public) intensity \(String(format: "%.2f", intensity), privacy: .public); current \(self.currentEmotion.rawValue, privacy: .public); scores {\(self.scoresDescription, privacy: .public)}"
+        )
     }
 
     func decayAll() {
@@ -64,7 +64,6 @@ final class EmotionState {
 
         if anyChanged {
             updateCurrentEmotion()
-            logger.debug("[Emotion] decay → {\(self.scoresDescription, privacy: .public)} → current: \(self.currentEmotion.rawValue, privacy: .public)")
         }
     }
 

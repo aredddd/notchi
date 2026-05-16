@@ -719,16 +719,13 @@ final class ClaudeUsageService {
         }
 
         guard !isLoading else {
-            logger.info("Ignoring \(trigger.rawValue, privacy: .public) usage retry while a fetch is already in flight")
             return
         }
 
         guard pendingResumeReconnectTimer == nil else {
-            logger.info("Ignoring \(trigger.rawValue, privacy: .public) while a Claude usage retry is already pending")
             return
         }
 
-        logger.info("Scheduling Claude usage reconnect 2s after \(trigger.rawValue, privacy: .public)")
         pendingResumeReconnectTimer = dependencies.schedulePoll(Self.resumeReconnectDelay) { [weak self] in
             Task { @MainActor [weak self] in
                 self?.performDelayedResumeReconnect(trigger: trigger)
@@ -744,13 +741,11 @@ final class ClaudeUsageService {
                isHeadersFallbackActive,
                let accessToken = cachedToken {
                 resetHeadersFallbackProbeWindowFromWake()
-                logger.info("System woke during active headers refresh mode; deferring OAuth re-probe for another \(Int(Self.headersFallbackOAuthProbeInterval))s")
                 await refreshActiveHeadersFallback(with: accessToken)
                 return
             }
 
             guard let resolution = resolveStoredAccessToken(allowsCredentialRecovery: true) else {
-                logger.info("No cached token, user must connect manually")
                 isConnected = false
                 AppSettings.isUsageEnabled = false
                 clearOAuthBackoffState()
@@ -816,7 +811,6 @@ final class ClaudeUsageService {
             if let silentCredentials = recoveredCredentials {
                 let recoveredToken = silentCredentials.accessToken
                 dependencies.cacheOAuthToken(recoveredToken)
-                logger.info("Recovered cached OAuth token from Claude Code credentials")
                 return ClaudeUsageAccessTokenResolution(token: recoveredToken, source: .recoveredFromCredentials, credentials: silentCredentials)
             }
         }
@@ -836,7 +830,6 @@ final class ClaudeUsageService {
         if let silentCredentials = recoveredCredentials {
             let recoveredToken = silentCredentials.accessToken
             dependencies.cacheOAuthToken(recoveredToken)
-            logger.info("Recovered cached OAuth token from Claude Code credentials")
             return ClaudeUsageAccessTokenResolution(token: recoveredToken, source: .recoveredFromCredentials, credentials: silentCredentials)
         }
 
@@ -846,7 +839,6 @@ final class ClaudeUsageService {
     func retryNow() {
         guard !isLoading else { return }
         if isHeadersFallbackActive {
-            logger.info("Retry tapped during active headers refresh mode")
             if let remainingProbe = activeHeadersFallbackProbeRemaining() {
                 scheduleHeadersFallbackActiveTimer(remainingProbe: remainingProbe)
             } else {
@@ -865,7 +857,6 @@ final class ClaudeUsageService {
             return
         }
         if let remainingBackoff = activeOAuthBackoffRemaining() {
-            logger.info("Retry tapped during active OAuth backoff")
             Task {
                 guard let accessToken = cachedToken else {
                     connectAndStartPolling()
@@ -914,7 +905,6 @@ final class ClaudeUsageService {
                 await self.fetchUsage()
             }
         }
-        logger.info("Next usage poll in \(Int(effectiveInterval))s")
     }
 
     private func fetchUsage() async {
@@ -925,18 +915,15 @@ final class ClaudeUsageService {
         }
 
         if isHeadersFallbackActive {
-            if let remainingProbe = activeHeadersFallbackProbeRemaining() {
-                logger.info("Refreshing usage via headers while OAuth re-probe is \(Int(remainingProbe))s away")
+            if activeHeadersFallbackProbeRemaining() != nil {
                 await refreshActiveHeadersFallback(with: accessToken)
             } else {
-                logger.info("Headers refresh window reached OAuth re-probe deadline")
                 await performFetch(with: accessToken, consultCredentialMetadata: false)
             }
             return
         }
 
         if let remainingBackoff = activeOAuthBackoffRemaining() {
-            logger.info("Skipping OAuth fetch while \(Int(remainingBackoff))s of backoff remain")
             presentOAuthBackoffState(remaining: remainingBackoff)
             scheduleBackoffTimer(remaining: remainingBackoff)
             return
@@ -1099,8 +1086,6 @@ final class ClaudeUsageService {
         request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
 
-        logger.info("Fetching usage via OAuth — User-Agent: \(userAgent)")
-
         do {
             let (data, response) = try await dependencies.fetchUsage(request)
 
@@ -1122,7 +1107,7 @@ final class ClaudeUsageService {
                        freshToken != accessToken {
                         cachedToken = freshToken
                         consecutiveRateLimits = 0
-                        logger.info("Token refreshed after persistent 429s")
+                        logger.info("Token refreshed after persistent OAuth 429 responses")
                         await performFetch(
                             with: freshToken,
                             userInitiated: userInitiated,
@@ -1208,7 +1193,6 @@ final class ClaudeUsageService {
                 with: usageResponse.extraUsage,
                 usage: usageResponse.fiveHour
             )
-            logger.info("Usage fetched via OAuth: \(self.currentUsage?.usagePercentage ?? 0)%")
             schedulePollTimer()
             return .success
 
@@ -1247,8 +1231,6 @@ final class ClaudeUsageService {
         ]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
-        logger.info("Fetching usage via headers fallback")
-
         do {
             let (_, response) = try await dependencies.fetchUsage(request)
 
@@ -1278,7 +1260,6 @@ final class ClaudeUsageService {
             }
 
             guard let utilization = parseHeaderUtilization(from: httpResponse) else {
-                logger.debug("No unified rate limit headers in response")
                 switch context {
                 case .activeFallbackRefresh:
                     return handleActiveHeadersFallbackMiss(logMessage: "No unified rate limit headers in active fallback refresh response")
@@ -1305,20 +1286,17 @@ final class ClaudeUsageService {
             case .activeFallbackRefresh:
                 clearTransientState()
                 persistRecoverySnapshotIfNeeded()
-                logger.info("Usage refreshed via active headers mode: \(usage.usagePercentage)%")
                 scheduleHeadersFallbackActiveTimer()
                 return .success
             case .oauthBackoffEntry:
                 clearTransientState()
                 beginHeadersFallbackProbeWindow()
-                logger.info("Usage fetched via headers during OAuth backoff: \(usage.usagePercentage)%")
                 scheduleHeadersFallbackActiveTimer()
                 return .success
             case .normalRetrying, .normalNoRetry:
                 consecutiveRateLimits = 0
                 clearOAuthBackoffState()
                 clearTransientState()
-                logger.info("Usage fetched via headers: \(usage.usagePercentage)%")
                 schedulePollTimer()
                 return .success
             }
@@ -1413,7 +1391,6 @@ final class ClaudeUsageService {
         } else {
             usesCredentialMetadata = false
             effectiveAccessToken = accessToken
-            logger.info("Silent OAuth credential metadata token mismatch; using cached token")
         }
 
         if usesCredentialMetadata,
@@ -1427,8 +1404,6 @@ final class ClaudeUsageService {
         if usesCredentialMetadata,
            let expiresAt = credentials.expiresAt,
            expiresAt <= dependencies.now() {
-            logger.info("Local OAuth credential metadata shows expired token before request")
-
             if userInitiated {
                 return .proceed(effectiveAccessToken)
             }
@@ -1470,11 +1445,6 @@ final class ClaudeUsageService {
             dependencies.cacheOAuthToken(credentialToken)
             logger.info("Recovered newer Claude Code credentials after OAuth 401")
             return .retry(credentialToken)
-        }
-
-        if let expiresAt = credentials.expiresAt,
-           expiresAt <= dependencies.now() {
-            logger.info("Claude Code credential metadata is still expired after OAuth 401")
         }
 
         return .waitForClaudeCode("Start a Claude Code session to track usage")
@@ -1600,7 +1570,6 @@ final class ClaudeUsageService {
         }
 
         resolvedUserAgent = resolved
-        logger.info("User-Agent resolved: \(resolved)")
         return resolved
     }
 
@@ -1681,21 +1650,17 @@ final class ClaudeUsageService {
         pendingResumeReconnectTimer = nil
 
         guard AppSettings.isUsageEnabled else {
-            logger.info("Skipping \(trigger.rawValue, privacy: .public) usage retry because Claude usage is disabled")
             return
         }
 
         guard recoveryAction == .waitForClaudeCode else {
-            logger.info("Skipping \(trigger.rawValue, privacy: .public) usage retry because Claude usage no longer waits for Claude Code")
             return
         }
 
         guard !isLoading else {
-            logger.info("Skipping \(trigger.rawValue, privacy: .public) usage retry because a fetch is already in flight")
             return
         }
 
-        logger.info("Retrying Claude usage after \(trigger.rawValue, privacy: .public)")
         connectAndStartPolling()
     }
 
@@ -1872,9 +1837,6 @@ final class ClaudeUsageService {
         if hasActiveHeadersFallback, currentUsage != nil {
             isConnected = true
             clearTransientState()
-            logger.info("Restored active headers refresh mode from persistence")
-        } else if hasActiveOAuthBackoff {
-            logger.info("Restored OAuth recovery window from persistence")
         }
     }
 

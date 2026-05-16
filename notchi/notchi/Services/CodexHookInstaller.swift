@@ -55,7 +55,6 @@ struct CodexHookInstaller {
             let bundledData = try Data(contentsOf: bundled)
             try bundledData.write(to: hookScriptURL, options: .atomic)
             try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: hookScriptURL.path)
-            codexHookLogger.info("Installed Codex hook script to \(hookScriptURL.path, privacy: .public)")
         } catch {
             codexHookLogger.error("Failed to install Codex hook script: \(error.localizedDescription)")
             return false
@@ -216,7 +215,6 @@ struct CodexHookInstaller {
 
         do {
             try data.write(to: url)
-            codexHookLogger.info("Updated hooks.json with Notchi Codex hooks")
             return true
         } catch {
             codexHookLogger.error("Failed to write Codex hooks.json: \(error.localizedDescription)")
@@ -230,7 +228,6 @@ struct CodexHookInstaller {
 
         do {
             try updatedContents.write(to: url, atomically: true, encoding: .utf8)
-            codexHookLogger.info("Enabled codex_hooks in config.toml")
             return true
         } catch {
             codexHookLogger.error("Failed to write Codex config.toml: \(error.localizedDescription)")
