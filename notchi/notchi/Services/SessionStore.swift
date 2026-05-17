@@ -58,9 +58,11 @@ final class SessionStore {
         selectedSessionKey = sessionKey
     }
 
-    func selectSession(matchingStableId stableId: String) {
-        guard let sessionKey = ProviderSessionKey(stableId: stableId) else { return }
+    @discardableResult
+    func selectSession(matchingStableId stableId: String) -> SessionData? {
+        guard let sessionKey = ProviderSessionKey(stableId: stableId) else { return nil }
         selectSession(sessionKey)
+        return sessions[sessionKey]
     }
 
     func clearSelectedSession() {
@@ -86,6 +88,7 @@ final class SessionStore {
             session.updatePermissionMode(mode)
         }
 
+        session.updateClaudeRuntime(processId: event.claudeProcessId)
         session.updateCodexRuntime(processId: event.codexProcessId, origin: event.codexOrigin)
         if event.provider == .codex, let transcriptPath = event.transcriptPath {
             session.updateCodexThreadMetadata(
