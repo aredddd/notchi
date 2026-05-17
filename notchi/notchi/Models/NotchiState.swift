@@ -43,6 +43,21 @@ enum NotchiTask: String, CaseIterable {
         }
     }
 
+    var mirrorPolicy: SpriteMirrorPolicy.Mode {
+        switch self {
+        case .idle:
+            return .timed(30...60)
+        case .waiting:
+            return .timed(45...90)
+        case .working:
+            return .timed(10...15)
+        case .compacting:
+            return .stateEntry
+        case .sleeping, .waving:
+            return .never
+        }
+    }
+
     var displayName: String {
         switch self {
         case .idle:       return "Idle"
@@ -100,6 +115,11 @@ enum NotchiSpriteFamily: String {
     case codex
 }
 
+struct SpriteSheetPresentation: Equatable {
+    let spriteSheetName: String
+    let renderMirrored: Bool
+}
+
 extension AgentProvider {
     var spriteFamily: NotchiSpriteFamily {
         switch self {
@@ -118,6 +138,7 @@ struct NotchiState: Equatable {
     var task: NotchiTask
     var emotion: NotchiEmotion = .neutral
     var spriteFamily: NotchiSpriteFamily = .claude
+    private static var flippedSpriteSheetAvailability: [String: Bool] = [:]
 
     /// Resolves the sprite sheet name with fallback chain: exact emotion -> nearby base emotion -> neutral -> idle.
     var spriteSheetName: String {
@@ -196,10 +217,39 @@ struct NotchiState: Equatable {
     }
     var swayAmplitude: Double { emotion.swayAmplitude }
     var canWalk: Bool { emotion == .sob ? false : task.canWalk }
+    var mirrorPolicy: SpriteMirrorPolicy.Mode { task.mirrorPolicy }
     var displayName: String { task.displayName }
     var walkFrequencyRange: ClosedRange<Double> { task.walkFrequencyRange }
     var frameCount: Int { inferredFrameCount ?? task.frameCount }
     var columns: Int { inferredFrameCount ?? task.columns }
+
+    @MainActor
+    func spriteSheetPresentation(isMirrored: Bool) -> SpriteSheetPresentation {
+        let name = spriteSheetName
+        guard isMirrored else {
+            return SpriteSheetPresentation(spriteSheetName: name, renderMirrored: false)
+        }
+
+        if task == .working {
+            let flippedName = "\(name)_flipped"
+            if Self.hasSpriteSheet(named: flippedName) {
+                return SpriteSheetPresentation(spriteSheetName: flippedName, renderMirrored: false)
+            }
+        }
+
+        return SpriteSheetPresentation(spriteSheetName: name, renderMirrored: true)
+    }
+
+    @MainActor
+    private static func hasSpriteSheet(named name: String) -> Bool {
+        if let cached = flippedSpriteSheetAvailability[name] {
+            return cached
+        }
+
+        let exists = NSImage(named: name) != nil
+        flippedSpriteSheetAvailability[name] = exists
+        return exists
+    }
 
     private var inferredFrameCount: Int? {
         guard let image = NSImage(named: spriteSheetName), image.size.height > 0 else {
