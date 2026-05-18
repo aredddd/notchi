@@ -137,6 +137,7 @@ final class SocketServerTests: XCTestCase {
             Task {
                 await secondRecorder.record(event)
             }
+            return nil
         }
 
         try await Task.sleep(nanoseconds: 100_000_000)
@@ -172,6 +173,7 @@ final class SocketServerTests: XCTestCase {
             Task {
                 await secondRecorder.record(event)
             }
+            return nil
         }
 
         firstServer.stop()
@@ -259,6 +261,28 @@ final class SocketServerTests: XCTestCase {
         XCTAssertTrue(delivered)
     }
 
+    func testServerWritesHandlerResponseToHalfClosedClient() async throws {
+        let response = Data("{\"ok\":true}".utf8)
+        let path = uniqueSocketPath()
+        let server = SocketServer(socketPath: path, clientReadTimeout: 0.5)
+        activeServers.append((server, path))
+
+        server.start { _ in response }
+
+        let didStart = await waitUntil(timeout: 1) {
+            FileManager.default.fileExists(atPath: path)
+        }
+        XCTAssertTrue(didStart)
+
+        let client = try connectClient(to: path)
+        try client.send(makeEventPayload(sessionId: "response-test"))
+        client.shutdownWriting()
+
+        let received = try client.readUntilClose()
+
+        XCTAssertEqual(received, response)
+    }
+
     private func makeServer(
         at path: String? = nil,
         clientReadTimeout: TimeInterval,
@@ -272,6 +296,7 @@ final class SocketServerTests: XCTestCase {
             Task {
                 await recorder.record(event)
             }
+            return nil
         }
 
         let didStart = await waitUntil(timeout: 1) {
@@ -419,6 +444,34 @@ private final class UnixSocketClient {
 
                 throw posixError(code: errno, message: "Failed to send test payload")
             }
+        }
+    }
+
+    func shutdownWriting() {
+        guard fileDescriptor >= 0 else { return }
+        shutdown(fileDescriptor, SHUT_WR)
+    }
+
+    func readUntilClose() throws -> Data {
+        var allData = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+
+        while true {
+            let bytesRead = read(fileDescriptor, &buffer, buffer.count)
+            if bytesRead > 0 {
+                allData.append(contentsOf: buffer[0..<bytesRead])
+                continue
+            }
+
+            if bytesRead == 0 {
+                return allData
+            }
+
+            if errno == EINTR {
+                continue
+            }
+
+            throw posixError(code: errno, message: "Failed to read test response")
         }
     }
 

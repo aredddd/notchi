@@ -3,7 +3,7 @@ import os.log
 
 nonisolated private let logger = Logger(subsystem: "com.ruban.notchi", category: "SocketServer")
 
-typealias AgentHookEnvelopeHandler = @Sendable (AgentHookEnvelope) -> Void
+typealias AgentHookEnvelopeHandler = @Sendable (AgentHookEnvelope) -> Data?
 
 // WHY: SocketServer owns its synchronization via serverQueue/clientQueue rather
 // than the main actor, so it should not inherit the project's default UI
@@ -234,6 +234,21 @@ nonisolated final class SocketServer: @unchecked Sendable {
         if clientFlags >= 0, fcntl(clientSocket, F_SETFL, clientFlags & ~O_NONBLOCK) != 0 {
             logger.warning("Failed to clear O_NONBLOCK on client socket: \(errno)")
         }
+
+        var suppressSigPipe: Int32 = 1
+        let suppressSigPipeLength = socklen_t(MemoryLayout.size(ofValue: suppressSigPipe))
+        let suppressResult = withUnsafePointer(to: &suppressSigPipe) { pointer in
+            setsockopt(
+                clientSocket,
+                SOL_SOCKET,
+                SO_NOSIGPIPE,
+                pointer,
+                suppressSigPipeLength
+            )
+        }
+        if suppressResult != 0 {
+            logger.warning("Failed to suppress SIGPIPE on client socket: \(errno)")
+        }
     }
 
     private func handleClient(_ clientSocket: Int32, eventHandler: AgentHookEnvelopeHandler?) {
@@ -246,7 +261,8 @@ nonisolated final class SocketServer: @unchecked Sendable {
             return
         }
 
-        eventHandler?(event)
+        guard let response = eventHandler?(event), !response.isEmpty else { return }
+        writeResponse(response, to: clientSocket)
     }
 
     private func readClientPayload(from clientSocket: Int32) -> Data? {
@@ -322,6 +338,35 @@ nonisolated final class SocketServer: @unchecked Sendable {
         let clampedTimeout = max(timeout, 0)
         let milliseconds = Int((clampedTimeout * 1000).rounded(.up))
         return Int32(min(milliseconds, Int(Int32.max)))
+    }
+
+    private func writeResponse(_ response: Data, to clientSocket: Int32) {
+        response.withUnsafeBytes { rawBuffer in
+            guard let baseAddress = rawBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return
+            }
+
+            var totalBytesWritten = 0
+            while totalBytesWritten < response.count {
+                let bytesWritten = write(
+                    clientSocket,
+                    baseAddress.advanced(by: totalBytesWritten),
+                    response.count - totalBytesWritten
+                )
+
+                if bytesWritten > 0 {
+                    totalBytesWritten += bytesWritten
+                    continue
+                }
+
+                if bytesWritten < 0, errno == EINTR {
+                    continue
+                }
+
+                logger.warning("Failed to write client response: \(errno)")
+                return
+            }
+        }
     }
 
     private func scheduleStartRetry(

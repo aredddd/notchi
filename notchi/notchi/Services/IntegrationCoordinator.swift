@@ -61,15 +61,20 @@ nonisolated final class IntegrationCoordinator: @unchecked Sendable {
         startEventDeliveryIfNeeded(onEvent: onEvent)
 
         socketServer.start { [weak self] envelope in
-            guard let self else { return }
+            guard let self else { return nil }
             guard let event = self.normalize(envelope) else {
                 integrationLogger.warning(
                     "Dropped unsupported \(envelope.provider.rawValue, privacy: .public) hook event: \(envelope.event, privacy: .public)"
                 )
-                return
+                return nil
             }
 
             self.enqueue(event)
+            guard let requestId = event.interactionRequestId else { return nil }
+            return HookInteractionResponseBroker.shared.waitForResponse(
+                requestId: requestId,
+                timeout: HookInteractionRequest.responseWaitTimeout
+            )
         }
     }
 

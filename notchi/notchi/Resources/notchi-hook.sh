@@ -38,6 +38,8 @@ status_map = {
     'SessionEnd': 'ended',
     'PreToolUse': 'running_tool',
     'PostToolUse': 'processing',
+    # Claude Code normally asks custom questions through PreToolUse; keep
+    # PermissionRequest for compatibility with observed/beta event shapes.
     'PermissionRequest': 'waiting_for_input',
     'Stop': 'waiting_for_input',
     'SubagentStop': 'waiting_for_input'
@@ -129,10 +131,27 @@ tool_input = input_data.get('tool_input', {})
 if tool_input:
     output['tool_input'] = tool_input
 
+def should_wait_for_response():
+    # PreToolUse is the normal Claude AskUserQuestion path. Keep
+    # PermissionRequest for Claude versions/events that surface it there.
+    return hook_event in ('PreToolUse', 'PermissionRequest') and tool == 'AskUserQuestion'
+
 try:
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.connect('$SOCKET_PATH')
     sock.sendall(json.dumps(output).encode())
+    if should_wait_for_response():
+        sock.shutdown(socket.SHUT_WR)
+        sock.settimeout(290)
+        response_chunks = []
+        while True:
+            chunk = sock.recv(4096)
+            if not chunk:
+                break
+            response_chunks.append(chunk)
+        if response_chunks:
+            sys.stdout.write(b''.join(response_chunks).decode())
+            sys.stdout.flush()
     sock.close()
 except:
     pass

@@ -107,6 +107,7 @@ struct HookEvent: Sendable {
     let claudeProcessId: Int?
     let codexProcessId: Int?
     let codexOrigin: CodexOrigin?
+    let interactionRequestId: String?
 
     nonisolated var sessionId: String {
         sessionKey.stableId
@@ -132,7 +133,8 @@ struct HookEvent: Sendable {
         interactive: Bool? = nil,
         claudeProcessId: Int? = nil,
         codexProcessId: Int? = nil,
-        codexOrigin: CodexOrigin? = nil
+        codexOrigin: CodexOrigin? = nil,
+        interactionRequestId: String? = nil
     ) {
         self.provider = provider
         self.sessionKey = ProviderSessionKey(provider: provider, rawSessionId: rawSessionId)
@@ -150,6 +152,7 @@ struct HookEvent: Sendable {
         self.claudeProcessId = claudeProcessId
         self.codexProcessId = codexProcessId
         self.codexOrigin = codexOrigin
+        self.interactionRequestId = interactionRequestId
     }
 }
 

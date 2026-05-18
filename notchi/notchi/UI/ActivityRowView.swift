@@ -56,7 +56,16 @@ struct ActivityRowView: View {
 
 struct QuestionPromptView: View {
     let questions: [PendingQuestion]
+    let onSelectOption: ((Int, Int) -> Void)?
     @State private var currentIndex = 0
+
+    init(
+        questions: [PendingQuestion],
+        onSelectOption: ((Int, Int) -> Void)? = nil
+    ) {
+        self.questions = questions
+        self.onSelectOption = onSelectOption
+    }
 
     private var clampedIndex: Int {
         min(currentIndex, questions.count - 1)
@@ -145,30 +154,60 @@ struct QuestionPromptView: View {
     private var optionsList: some View {
         VStack(alignment: .leading, spacing: 4) {
             ForEach(Array(current.options.enumerated()), id: \.offset) { index, option in
-                HStack(alignment: .top, spacing: 6) {
-                    Text("\(index + 1).")
-                        .font(.system(size: 11, weight: .semibold).monospacedDigit())
-                        .foregroundColor(TerminalColors.claudeOrange)
-                        .frame(width: 16, alignment: .trailing)
+                let isInteractive = onSelectOption != nil
+                let isFreeTextOption = PendingQuestion.isFreeTextOptionLabel(option.label)
+                let isDisabledFreeText = isInteractive && isFreeTextOption
 
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(option.label)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(TerminalColors.primaryText)
-                        if let desc = option.description {
-                            Text(desc)
-                                .font(.system(size: 10))
-                                .foregroundColor(TerminalColors.dimmedText)
-                                .lineLimit(2)
-                        }
+                if isInteractive, !isFreeTextOption {
+                    Button {
+                        onSelectOption?(clampedIndex, index)
+                    } label: {
+                        optionRow(index: index, option: option, isDisabled: false)
                     }
+                    .buttonStyle(.plain)
+                } else {
+                    optionRow(
+                        index: index,
+                        option: option,
+                        isDisabled: isDisabledFreeText,
+                        fallbackDescription: isDisabledFreeText ? "Use terminal for custom text" : nil
+                    )
                 }
             }
         }
     }
 
+    private func optionRow(
+        index: Int,
+        option: (label: String, description: String?),
+        isDisabled: Bool,
+        fallbackDescription: String? = nil
+    ) -> some View {
+        let description = option.description ?? fallbackDescription
+
+        return HStack(alignment: .top, spacing: 6) {
+            Text("\(index + 1).")
+                .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                .foregroundColor(isDisabled ? TerminalColors.dimmedText : TerminalColors.claudeOrange)
+                .frame(width: 16, alignment: .trailing)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(option.label)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(isDisabled ? TerminalColors.dimmedText : TerminalColors.primaryText)
+                if let description {
+                    Text(description)
+                        .font(.system(size: 10))
+                        .foregroundColor(TerminalColors.dimmedText)
+                        .lineLimit(2)
+                }
+            }
+        }
+        .contentShape(Rectangle())
+    }
+
     private var answerHint: some View {
-        Text("Answer in terminal")
+        Text(onSelectOption == nil ? "Answer in terminal" : "Select an option")
             .font(.system(size: 10).italic())
             .foregroundColor(TerminalColors.dimmedText)
     }

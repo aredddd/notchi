@@ -125,7 +125,10 @@ final class SessionStore {
             session.recordPreToolUse(tool: event.tool, toolInput: toolInput, toolUseId: event.toolUseId)
             if event.tool == "AskUserQuestion" {
                 session.updateTask(.waiting)
-                session.setPendingQuestions(Self.parseQuestions(from: event.toolInput))
+                session.setPendingQuestions(
+                    Self.parseQuestions(from: event.toolInput),
+                    responseContext: Self.buildQuestionResponseContext(for: event)
+                )
             } else {
                 session.clearPendingQuestions()
                 session.updateTask(.working)
@@ -134,7 +137,10 @@ final class SessionStore {
         case .permissionRequest:
             session.updateTask(.waiting)
             if event.tool == "AskUserQuestion" {
-                session.setPendingQuestions(Self.parseQuestions(from: event.toolInput))
+                session.setPendingQuestions(
+                    Self.parseQuestions(from: event.toolInput),
+                    responseContext: Self.buildQuestionResponseContext(for: event)
+                )
             } else {
                 let question = Self.buildPermissionQuestion(tool: event.tool, toolInput: event.toolInput)
                 session.setPendingQuestions([question])
@@ -312,6 +318,46 @@ final class SessionStore {
         sessions[sessionKey]
     }
 
+    @discardableResult
+    func answerPendingQuestion(
+        in sessionKey: ProviderSessionKey,
+        questionIndex: Int,
+        optionIndex: Int
+    ) -> Bool {
+        guard let session = sessions[sessionKey],
+              let context = session.pendingQuestionResponseContext,
+              session.pendingQuestions.indices.contains(questionIndex) else {
+            return false
+        }
+
+        let question = session.pendingQuestions[questionIndex]
+        guard question.options.indices.contains(optionIndex) else { return false }
+
+        let option = question.options[optionIndex]
+        guard !PendingQuestion.isFreeTextOptionLabel(option.label),
+              let responseData = HookInteractionResponse.makeAskUserQuestionResponse(
+                hookEventName: context.hookEventName,
+                toolInput: context.toolInput,
+                question: question.question,
+                answer: option.label
+              ) else {
+            return false
+        }
+
+        guard HookInteractionResponseBroker.shared.submitResponse(
+            responseData,
+            for: context.requestId
+        ) else {
+            session.clearPendingQuestions()
+            session.updateTask(.idle)
+            return false
+        }
+
+        session.clearPendingQuestions()
+        session.updateTask(.working)
+        return true
+    }
+
 #if DEBUG
     func refreshCodexThreadMetadataForTesting() -> [SessionData] {
         let updates = codexThreadMetadataRequests().map { request in
@@ -404,17 +450,25 @@ final class SessionStore {
     private static func optionsWithFreeTextChoice(
         _ options: [(label: String, description: String?)]
     ) -> [(label: String, description: String?)] {
-        let trimmed = Self.freeTextLabelNormalized(PendingQuestion.freeTextOptionLabel)
         let alreadyIncludesFreeText = options.contains { option in
-            Self.freeTextLabelNormalized(option.label).caseInsensitiveCompare(trimmed) == .orderedSame
+            PendingQuestion.isFreeTextOptionLabel(option.label)
         }
 
         guard !alreadyIncludesFreeText else { return options }
         return options + [(label: PendingQuestion.freeTextOptionLabel, description: nil)]
     }
 
-    private static func freeTextLabelNormalized(_ label: String) -> String {
-        label.trimmingCharacters(in: CharacterSet(charactersIn: ". "))
+    private static func buildQuestionResponseContext(for event: HookEvent) -> PendingQuestionResponseContext? {
+        guard event.provider == .claude,
+              let requestId = event.interactionRequestId else {
+            return nil
+        }
+
+        return PendingQuestionResponseContext(
+            requestId: requestId,
+            hookEventName: event.event.rawValue,
+            toolInput: event.toolInput
+        )
     }
 
     private static let localSlashCommands: Set<String> = [
@@ -540,6 +594,156 @@ nonisolated enum CodexFileSystem {
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         return output?.isEmpty == false ? output : nil
+    }
+}
+
+nonisolated enum HookInteractionRequest {
+    static let responseWaitTimeout: TimeInterval = 300
+
+    // PermissionRequest compatibility events can lack a tool_use_id, so this
+    // method may generate a fresh fallback id. Store the result on HookEvent
+    // instead of recomputing it later.
+    static func id(for envelope: AgentHookEnvelope) -> String? {
+        guard envelope.provider == .claude,
+              envelope.tool == "AskUserQuestion",
+              let event = NormalizedAgentEvent.claudeEvent(named: envelope.event) else {
+            return nil
+        }
+
+        let toolUseId: String
+        switch event {
+        case .preToolUse:
+            guard let existingToolUseId = envelope.toolUseId else { return nil }
+            toolUseId = existingToolUseId
+        case .permissionRequest:
+            toolUseId = envelope.toolUseId ?? UUID().uuidString
+        default:
+            return nil
+        }
+
+        return id(
+            provider: envelope.provider,
+            rawSessionId: envelope.sessionId,
+            hookEventName: envelope.event,
+            toolUseId: toolUseId
+        )
+    }
+
+    static func id(
+        provider: AgentProvider,
+        rawSessionId: String,
+        hookEventName: String,
+        toolUseId: String
+    ) -> String {
+        [
+            provider.rawValue,
+            rawSessionId,
+            hookEventName,
+            toolUseId,
+        ].joined(separator: ":")
+    }
+}
+
+nonisolated final class HookInteractionResponseBroker: @unchecked Sendable {
+    static let shared = HookInteractionResponseBroker()
+
+    private let condition = NSCondition()
+    private var pendingRequestIds: Set<String> = []
+    private var responsesByRequestId: [String: Data] = [:]
+
+    func waitForResponse(requestId: String, timeout: TimeInterval) -> Data? {
+        let deadline = Date().addingTimeInterval(timeout)
+
+        condition.lock()
+        pendingRequestIds.insert(requestId)
+        defer {
+            pendingRequestIds.remove(requestId)
+            responsesByRequestId.removeValue(forKey: requestId)
+            condition.unlock()
+        }
+
+        while responsesByRequestId[requestId] == nil, Date() < deadline {
+            condition.wait(until: deadline)
+        }
+
+        return responsesByRequestId[requestId]
+    }
+
+    @discardableResult
+    func submitResponse(_ response: Data, for requestId: String) -> Bool {
+        condition.lock()
+        defer { condition.unlock() }
+
+        guard pendingRequestIds.contains(requestId) else { return false }
+        responsesByRequestId[requestId] = response
+        condition.broadcast()
+        return true
+    }
+
+#if DEBUG
+    func isWaitingForResponse(requestId: String) -> Bool {
+        condition.lock()
+        defer { condition.unlock() }
+        return pendingRequestIds.contains(requestId)
+    }
+#endif
+}
+
+nonisolated enum HookInteractionResponse {
+    static func makeAskUserQuestionResponse(
+        hookEventName: String,
+        toolInput: [String: AnyCodable]?,
+        question: String,
+        answer: String
+    ) -> Data? {
+        var updatedInput = recursivelyUnwrapped(toolInput) as? [String: Any] ?? [:]
+        var answers = updatedInput["answers"] as? [String: Any] ?? [:]
+        answers[question] = answer
+        updatedInput["answers"] = answers
+
+        let output: [String: Any]
+        if hookEventName == NormalizedAgentEvent.permissionRequest.rawValue {
+            // Claude versions observed in the wild can surface AskUserQuestion
+            // through PermissionRequest; keep the matching response shape.
+            output = [
+                "hookSpecificOutput": [
+                    "hookEventName": hookEventName,
+                    "decision": [
+                        "behavior": "allow",
+                        "updatedInput": updatedInput,
+                    ],
+                ],
+            ]
+        } else {
+            output = [
+                "hookSpecificOutput": [
+                    "hookEventName": hookEventName,
+                    "permissionDecision": "allow",
+                    "updatedInput": updatedInput,
+                ],
+            ]
+        }
+
+        return try? JSONSerialization.data(withJSONObject: output)
+    }
+
+    private static func recursivelyUnwrapped(_ value: Any?) -> Any {
+        switch value {
+        case nil:
+            return NSNull()
+        case let value as AnyCodable:
+            return recursivelyUnwrapped(value.value)
+        case let dict as [String: AnyCodable]:
+            return dict.mapValues { recursivelyUnwrapped($0) }
+        case let dict as [String: Any]:
+            return dict.mapValues { recursivelyUnwrapped($0) }
+        case let array as [AnyCodable]:
+            return array.map { recursivelyUnwrapped($0) }
+        case let array as [Any]:
+            return array.map { recursivelyUnwrapped($0) }
+        default:
+            return value ?? NSNull()
+        }
     }
 }
 

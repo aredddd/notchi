@@ -203,6 +203,191 @@ final class SessionStoreTests: XCTestCase {
         )
     }
 
+    func testAnswerPendingQuestionSubmitsClaudePreToolUseResponse() async throws {
+        let store = SessionStore.shared
+        let sessionId = "ask-user-question-answer-\(UUID().uuidString)"
+        let requestId = HookInteractionRequest.id(
+            provider: .claude,
+            rawSessionId: sessionId,
+            hookEventName: NormalizedAgentEvent.preToolUse.rawValue,
+            toolUseId: "tool-ask"
+        )
+        let session = store.process(makeEvent(
+            sessionId: sessionId,
+            event: .preToolUse,
+            status: "running_tool",
+            tool: "AskUserQuestion",
+            toolUseId: "tool-ask",
+            toolInput: [
+                "questions": AnyCodable([
+                    [
+                        "question": "Which path?",
+                        "options": [
+                            ["label": "Fast"],
+                            ["label": "Careful"],
+                        ],
+                    ],
+                ]),
+            ],
+            interactionRequestId: requestId
+        ))
+        let responseTask = Task.detached {
+            HookInteractionResponseBroker.shared.waitForResponse(
+                requestId: requestId,
+                timeout: 1
+            )
+        }
+        let responseWaiterRegistered = await waitUntil(timeout: 1) {
+            HookInteractionResponseBroker.shared.isWaitingForResponse(requestId: requestId)
+        }
+        XCTAssertTrue(responseWaiterRegistered)
+
+        XCTAssertTrue(store.answerPendingQuestion(
+            in: session.sessionKey,
+            questionIndex: 0,
+            optionIndex: 1
+        ))
+
+        let maybeResponseData = await responseTask.value
+        let responseData = try XCTUnwrap(maybeResponseData)
+        let response = try XCTUnwrap(JSONSerialization.jsonObject(with: responseData) as? [String: Any])
+        let hookOutput = try XCTUnwrap(response["hookSpecificOutput"] as? [String: Any])
+        let updatedInput = try XCTUnwrap(hookOutput["updatedInput"] as? [String: Any])
+        let answers = try XCTUnwrap(updatedInput["answers"] as? [String: String])
+        let questions = try XCTUnwrap(updatedInput["questions"] as? [[String: Any]])
+
+        XCTAssertEqual(hookOutput["hookEventName"] as? String, "PreToolUse")
+        XCTAssertEqual(hookOutput["permissionDecision"] as? String, "allow")
+        XCTAssertEqual(answers, ["Which path?": "Careful"])
+        XCTAssertEqual(questions.first?["question"] as? String, "Which path?")
+        XCTAssertEqual((questions.first?["options"] as? [[String: Any]])?.count, 2)
+        XCTAssertTrue(session.pendingQuestions.isEmpty)
+    }
+
+    func testAskUserQuestionPermissionRequestResponseUsesDecisionShapeAndPreservesNulls() throws {
+        let responseData = try XCTUnwrap(HookInteractionResponse.makeAskUserQuestionResponse(
+            hookEventName: NormalizedAgentEvent.permissionRequest.rawValue,
+            toolInput: [
+                "metadata": AnyCodable([
+                    "nullValue": NSNull(),
+                    "list": [NSNull(), "kept"],
+                ]),
+            ],
+            question: "Which path?",
+            answer: "Careful"
+        ))
+        let response = try XCTUnwrap(JSONSerialization.jsonObject(with: responseData) as? [String: Any])
+        let hookOutput = try XCTUnwrap(response["hookSpecificOutput"] as? [String: Any])
+        let decision = try XCTUnwrap(hookOutput["decision"] as? [String: Any])
+        let updatedInput = try XCTUnwrap(decision["updatedInput"] as? [String: Any])
+        let answers = try XCTUnwrap(updatedInput["answers"] as? [String: String])
+        let metadata = try XCTUnwrap(updatedInput["metadata"] as? [String: Any])
+        let list = try XCTUnwrap(metadata["list"] as? [Any])
+
+        XCTAssertEqual(hookOutput["hookEventName"] as? String, "PermissionRequest")
+        XCTAssertNil(hookOutput["permissionDecision"])
+        XCTAssertEqual(decision["behavior"] as? String, "allow")
+        XCTAssertEqual(answers, ["Which path?": "Careful"])
+        XCTAssertTrue(metadata["nullValue"] is NSNull)
+        XCTAssertTrue(list.first is NSNull)
+        XCTAssertEqual(list.last as? String, "kept")
+    }
+
+    func testAnswerPendingQuestionClearsStaleQuestionWhenBrokerAlreadyTimedOut() {
+        let store = SessionStore.shared
+        let sessionId = "ask-user-question-stale-\(UUID().uuidString)"
+        let session = store.process(makeEvent(
+            sessionId: sessionId,
+            event: .preToolUse,
+            status: "running_tool",
+            tool: "AskUserQuestion",
+            toolUseId: "tool-ask",
+            toolInput: [
+                "questions": AnyCodable([
+                    [
+                        "question": "Which path?",
+                        "options": [
+                            ["label": "Fast"],
+                        ],
+                    ],
+                ]),
+            ],
+            interactionRequestId: HookInteractionRequest.id(
+                provider: .claude,
+                rawSessionId: sessionId,
+                hookEventName: NormalizedAgentEvent.preToolUse.rawValue,
+                toolUseId: "tool-ask"
+            )
+        ))
+
+        XCTAssertFalse(store.answerPendingQuestion(
+            in: session.sessionKey,
+            questionIndex: 0,
+            optionIndex: 0
+        ))
+        XCTAssertTrue(session.pendingQuestions.isEmpty)
+        XCTAssertEqual(session.task, .idle)
+    }
+
+    func testFreeTextPendingQuestionOptionDoesNotSubmitResponse() {
+        let store = SessionStore.shared
+        let sessionId = "ask-user-question-free-text-no-submit-\(UUID().uuidString)"
+        let requestId = HookInteractionRequest.id(
+            provider: .claude,
+            rawSessionId: sessionId,
+            hookEventName: NormalizedAgentEvent.preToolUse.rawValue,
+            toolUseId: "tool-ask"
+        )
+        let session = store.process(makeEvent(
+            sessionId: sessionId,
+            event: .preToolUse,
+            status: "running_tool",
+            tool: "AskUserQuestion",
+            toolUseId: "tool-ask",
+            toolInput: [
+                "questions": AnyCodable([
+                    [
+                        "question": "Which path?",
+                        "options": [
+                            ["label": "Fast"],
+                        ],
+                    ],
+                ]),
+            ],
+            interactionRequestId: requestId
+        ))
+
+        XCTAssertFalse(store.answerPendingQuestion(
+            in: session.sessionKey,
+            questionIndex: 0,
+            optionIndex: 1
+        ))
+        XCTAssertFalse(session.pendingQuestions.isEmpty)
+    }
+
+    func testAskUserQuestionInteractionIdRequiresToolUseIdForPreToolUse() throws {
+        let payload: [String: Any] = [
+            "provider": "claude",
+            "session_id": "missing-tool-use-id",
+            "cwd": "/tmp",
+            "event": "PreToolUse",
+            "status": "running_tool",
+            "tool": "AskUserQuestion",
+            "tool_input": [
+                "questions": [
+                    [
+                        "question": "Which path?",
+                        "options": [["label": "Fast"]],
+                    ],
+                ],
+            ],
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        let envelope = try JSONDecoder().decode(AgentHookEnvelope.self, from: data)
+
+        XCTAssertNil(HookInteractionRequest.id(for: envelope))
+    }
+
     func testDisplaySessionNumbersRenumberAfterDismissal() {
         let store = SessionStore.shared
         let cwd = "/tmp/notchi"
@@ -595,7 +780,8 @@ final class SessionStoreTests: XCTestCase {
         userPromptHasAttachments: Bool = false,
         tool: String? = nil,
         toolUseId: String? = nil,
-        toolInput: [String: AnyCodable]? = nil
+        toolInput: [String: AnyCodable]? = nil,
+        interactionRequestId: String? = nil
     ) -> HookEvent {
         HookEvent(
             provider: provider,
@@ -610,7 +796,26 @@ final class SessionStoreTests: XCTestCase {
             userPrompt: userPrompt,
             userPromptHasAttachments: userPromptHasAttachments,
             permissionMode: nil,
-            interactive: true
+            interactive: true,
+            interactionRequestId: interactionRequestId
         )
+    }
+
+    private func waitUntil(
+        timeout: TimeInterval,
+        pollIntervalNanoseconds: UInt64 = 10_000_000,
+        condition: @escaping () -> Bool
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+
+        while Date() < deadline {
+            if condition() {
+                return true
+            }
+
+            try? await Task.sleep(nanoseconds: pollIntervalNanoseconds)
+        }
+
+        return condition()
     }
 }
