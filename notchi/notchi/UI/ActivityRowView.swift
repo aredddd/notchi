@@ -59,6 +59,7 @@ struct QuestionPromptView: View {
     let onSelectOption: ((Int, Int) -> Bool)?
     @State private var currentIndex = 0
     @State private var hoveredOptionIndex: Int?
+    @State private var pressedOptionIndex: Int?
     @State private var isSubmitting = false
 
     init(
@@ -101,6 +102,7 @@ struct QuestionPromptView: View {
         .onChange(of: questions.count) {
             currentIndex = 0
             hoveredOptionIndex = nil
+            pressedOptionIndex = nil
             isSubmitting = false
         }
         .onReceive(NotificationCenter.default.publisher(for: .notchiQuestionOptionShortcut)) { notification in
@@ -170,17 +172,23 @@ struct QuestionPromptView: View {
                     Button {
                         selectOption(index: index)
                     } label: {
-                        highlightedOptionRow(index: index, option: option)
+                        highlightedOptionRow(
+                            index: index,
+                            option: option,
+                            isPressed: pressedOptionIndex == index
+                        )
                     }
                     .buttonStyle(.plain)
                     .disabled(isSubmitting)
+                    .simultaneousGesture(pressGesture(for: index))
                 } else if isInteractive {
                     highlightedOptionRow(
                         index: index,
                         option: (
                             label: option.label,
                             description: option.description ?? "Use terminal for custom text"
-                        )
+                        ),
+                        isPressed: false
                     )
                 } else {
                     optionRow(index: index, option: option)
@@ -192,10 +200,11 @@ struct QuestionPromptView: View {
 
     private func highlightedOptionRow(
         index: Int,
-        option: (label: String, description: String?)
+        option: (label: String, description: String?),
+        isPressed: Bool = false
     ) -> some View {
         let isHovered = hoveredOptionIndex == index
-        let style = highlightedOptionStyle(isHovered: isHovered)
+        let style = highlightedOptionStyle(isHovered: isHovered, isPressed: isPressed)
 
         return HStack(alignment: .center, spacing: 9) {
             Text("\(index + 1)")
@@ -227,30 +236,97 @@ struct QuestionPromptView: View {
                 .fill(style.rowFill)
                 .overlay(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(style.stroke, lineWidth: 1)
+                        .stroke(style.stroke, lineWidth: style.strokeWidth)
                 )
         )
         .contentShape(RoundedRectangle(cornerRadius: 8))
+        .shadow(color: style.shadowColor, radius: style.shadowRadius, y: style.shadowYOffset)
+        .brightness(isPressed ? 0.035 : 0)
+        .scaleEffect(isPressed ? 0.985 : 1, anchor: .center)
         .onHover { isHovering in
             if isHovering {
                 hoveredOptionIndex = index
             } else if hoveredOptionIndex == index {
                 hoveredOptionIndex = nil
+                pressedOptionIndex = nil
             }
         }
         .animation(.easeOut(duration: 0.12), value: isHovered)
+        .animation(.interactiveSpring(response: 0.16, dampingFraction: 0.72, blendDuration: 0.04), value: isPressed)
     }
 
-    private func highlightedOptionStyle(isHovered: Bool) -> (
+    private func highlightedOptionStyle(isHovered: Bool, isPressed: Bool) -> (
         rowFill: Color,
         badgeFill: Color,
-        stroke: Color
+        stroke: Color,
+        strokeWidth: CGFloat,
+        shadowColor: Color,
+        shadowRadius: CGFloat,
+        shadowYOffset: CGFloat
     ) {
-        (
-            rowFill: TerminalColors.claudeOrange.opacity(isHovered ? 0.32 : 0.22),
-            badgeFill: TerminalColors.claudeOrangeDeep.opacity(isHovered ? 1 : 0.92),
-            stroke: TerminalColors.claudeOrange.opacity(isHovered ? 0.42 : 0.16)
+        let rowFillOpacity: Double
+        let badgeFillOpacity: Double
+        let strokeOpacity: Double
+        let strokeWidth: CGFloat
+        let shadowOpacity: Double
+        let shadowRadius: CGFloat
+        let shadowYOffset: CGFloat
+
+        if isPressed {
+            rowFillOpacity = 0.46
+            badgeFillOpacity = 1
+            strokeOpacity = 0.7
+            strokeWidth = 1.25
+            shadowOpacity = 0.08
+            shadowRadius = 3
+            shadowYOffset = 1
+        } else if isHovered {
+            rowFillOpacity = 0.34
+            badgeFillOpacity = 1
+            strokeOpacity = 0.46
+            strokeWidth = 1
+            shadowOpacity = 0.14
+            shadowRadius = 5
+            shadowYOffset = 2
+        } else {
+            rowFillOpacity = 0.22
+            badgeFillOpacity = 0.92
+            strokeOpacity = 0.16
+            strokeWidth = 1
+            shadowOpacity = 0
+            shadowRadius = 0
+            shadowYOffset = 2
+        }
+
+        return (
+            rowFill: TerminalColors.claudeOrange.opacity(rowFillOpacity),
+            badgeFill: TerminalColors.claudeOrangeDeep.opacity(badgeFillOpacity),
+            stroke: TerminalColors.claudeOrange.opacity(strokeOpacity),
+            strokeWidth: strokeWidth,
+            shadowColor: TerminalColors.claudeOrange.opacity(shadowOpacity),
+            shadowRadius: shadowRadius,
+            shadowYOffset: shadowYOffset
         )
+    }
+
+    private static let pressDragTolerance: CGFloat = 8
+
+    private func pressGesture(for index: Int) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                let withinTolerance =
+                    abs(value.translation.width) <= Self.pressDragTolerance &&
+                    abs(value.translation.height) <= Self.pressDragTolerance
+
+                if !isSubmitting && withinTolerance {
+                    pressedOptionIndex = index
+                } else if pressedOptionIndex == index {
+                    pressedOptionIndex = nil
+                }
+            }
+            .onEnded { _ in
+                pressedOptionIndex = nil
+            }
     }
 
     private func selectOption(index optionIndex: Int) {
@@ -263,6 +339,9 @@ struct QuestionPromptView: View {
 
         isSubmitting = true
         let didSubmit = onSelectOption(clampedIndex, optionIndex)
+        if didSubmit {
+            HapticService.shared.playNavigationTap()
+        }
         if !didSubmit {
             isSubmitting = false
         }

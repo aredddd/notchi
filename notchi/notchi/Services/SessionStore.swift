@@ -358,6 +358,33 @@ final class SessionStore {
         return true
     }
 
+    @discardableResult
+    func cancelPendingQuestion(in sessionKey: ProviderSessionKey) -> Bool {
+        guard let session = sessions[sessionKey],
+              !session.pendingQuestions.isEmpty else {
+            return false
+        }
+
+        // .working only when the broker actually relays the deny back to the hook;
+        // otherwise Claude isn't waiting on us, so drop to .idle.
+        let denySubmitted: Bool
+        if let context = session.pendingQuestionResponseContext,
+           let responseData = HookInteractionResponse.makeAskUserQuestionCancellationResponse(
+               hookEventName: context.hookEventName
+           ) {
+            denySubmitted = HookInteractionResponseBroker.shared.submitResponse(
+                responseData,
+                for: context.requestId
+            )
+        } else {
+            denySubmitted = false
+        }
+
+        session.clearPendingQuestions()
+        session.updateTask(denySubmitted ? .working : .idle)
+        return true
+    }
+
 #if DEBUG
     func refreshCodexThreadMetadataForTesting() -> [SessionData] {
         let updates = codexThreadMetadataRequests().map { request in
@@ -690,6 +717,8 @@ nonisolated final class HookInteractionResponseBroker: @unchecked Sendable {
 }
 
 nonisolated enum HookInteractionResponse {
+    private static let userCanceledQuestionReason = "Question canceled by user."
+
     static func makeAskUserQuestionResponse(
         hookEventName: String,
         toolInput: [String: AnyCodable]?,
@@ -720,6 +749,33 @@ nonisolated enum HookInteractionResponse {
                     "hookEventName": hookEventName,
                     "permissionDecision": "allow",
                     "updatedInput": updatedInput,
+                ],
+            ]
+        }
+
+        return try? JSONSerialization.data(withJSONObject: output)
+    }
+
+    static func makeAskUserQuestionCancellationResponse(hookEventName: String) -> Data? {
+        let output: [String: Any]
+        if hookEventName == NormalizedAgentEvent.permissionRequest.rawValue {
+            // PermissionRequest has a distinct deny shape from PreToolUse.
+            output = [
+                "hookSpecificOutput": [
+                    "hookEventName": hookEventName,
+                    "decision": [
+                        "behavior": "deny",
+                        "message": userCanceledQuestionReason,
+                        "interrupt": false,
+                    ],
+                ],
+            ]
+        } else {
+            output = [
+                "hookSpecificOutput": [
+                    "hookEventName": hookEventName,
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": userCanceledQuestionReason,
                 ],
             ]
         }

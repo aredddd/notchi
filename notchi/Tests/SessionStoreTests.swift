@@ -264,6 +264,77 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertTrue(session.pendingQuestions.isEmpty)
     }
 
+    func testCancelPendingQuestionSubmitsClaudePreToolUseDenyResponse() async throws {
+        let store = SessionStore.shared
+        let sessionId = "ask-user-question-cancel-\(UUID().uuidString)"
+        let requestId = HookInteractionRequest.id(
+            provider: .claude,
+            rawSessionId: sessionId,
+            hookEventName: NormalizedAgentEvent.preToolUse.rawValue,
+            toolUseId: "tool-ask"
+        )
+        let session = store.process(makeEvent(
+            sessionId: sessionId,
+            event: .preToolUse,
+            status: "running_tool",
+            tool: "AskUserQuestion",
+            toolUseId: "tool-ask",
+            toolInput: [
+                "questions": AnyCodable([
+                    [
+                        "question": "Which path?",
+                        "options": [
+                            ["label": "Fast"],
+                        ],
+                    ],
+                ]),
+            ],
+            interactionRequestId: requestId
+        ))
+        let responseTask = Task.detached {
+            HookInteractionResponseBroker.shared.waitForResponse(
+                requestId: requestId,
+                timeout: 1
+            )
+        }
+        let responseWaiterRegistered = await waitUntil(timeout: 1) {
+            HookInteractionResponseBroker.shared.isWaitingForResponse(requestId: requestId)
+        }
+        XCTAssertTrue(responseWaiterRegistered)
+
+        XCTAssertTrue(store.cancelPendingQuestion(in: session.sessionKey))
+
+        let maybeResponseData = await responseTask.value
+        let responseData = try XCTUnwrap(maybeResponseData)
+        let response = try XCTUnwrap(JSONSerialization.jsonObject(with: responseData) as? [String: Any])
+        let hookOutput = try XCTUnwrap(response["hookSpecificOutput"] as? [String: Any])
+
+        XCTAssertEqual(hookOutput["hookEventName"] as? String, "PreToolUse")
+        XCTAssertEqual(hookOutput["permissionDecision"] as? String, "deny")
+        XCTAssertEqual(hookOutput["permissionDecisionReason"] as? String, "Question canceled by user.")
+        XCTAssertNil(hookOutput["updatedInput"])
+        XCTAssertTrue(session.pendingQuestions.isEmpty)
+    }
+
+    func testCancelPendingQuestionWithoutResponseContextClearsLocalQuestion() {
+        let store = SessionStore.shared
+        let session = store.process(makeEvent(
+            sessionId: "permission-question-cancel-\(UUID().uuidString)",
+            event: .permissionRequest,
+            status: "waiting_for_input",
+            tool: "Bash",
+            toolInput: [
+                "command": AnyCodable("sysctl -n hw.ncpu"),
+                "description": AnyCodable("Print CPU core count"),
+            ]
+        ))
+
+        XCTAssertFalse(session.pendingQuestions.isEmpty)
+        XCTAssertTrue(store.cancelPendingQuestion(in: session.sessionKey))
+        XCTAssertTrue(session.pendingQuestions.isEmpty)
+        XCTAssertEqual(session.task, .idle)
+    }
+
     func testAskUserQuestionPermissionRequestResponseUsesDecisionShapeAndPreservesNulls() throws {
         let responseData = try XCTUnwrap(HookInteractionResponse.makeAskUserQuestionResponse(
             hookEventName: NormalizedAgentEvent.permissionRequest.rawValue,
@@ -291,6 +362,21 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertTrue(metadata["nullValue"] is NSNull)
         XCTAssertTrue(list.first is NSNull)
         XCTAssertEqual(list.last as? String, "kept")
+    }
+
+    func testAskUserQuestionPermissionRequestCancellationUsesDecisionDenyShape() throws {
+        let responseData = try XCTUnwrap(HookInteractionResponse.makeAskUserQuestionCancellationResponse(
+            hookEventName: NormalizedAgentEvent.permissionRequest.rawValue
+        ))
+        let response = try XCTUnwrap(JSONSerialization.jsonObject(with: responseData) as? [String: Any])
+        let hookOutput = try XCTUnwrap(response["hookSpecificOutput"] as? [String: Any])
+        let decision = try XCTUnwrap(hookOutput["decision"] as? [String: Any])
+
+        XCTAssertEqual(hookOutput["hookEventName"] as? String, "PermissionRequest")
+        XCTAssertNil(hookOutput["permissionDecision"])
+        XCTAssertEqual(decision["behavior"] as? String, "deny")
+        XCTAssertEqual(decision["message"] as? String, "Question canceled by user.")
+        XCTAssertEqual(decision["interrupt"] as? Bool, false)
     }
 
     func testAnswerPendingQuestionClearsStaleQuestionWhenBrokerAlreadyTimedOut() {

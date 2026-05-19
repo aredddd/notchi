@@ -369,6 +369,10 @@ struct NotchContentView: View {
             await startLaunchWave()
         }
         .onReceive(NotificationCenter.default.publisher(for: .notchiShouldCollapse)) { _ in
+            if let activeSession, !activeSession.pendingQuestions.isEmpty {
+                sessionStore.cancelPendingQuestion(in: activeSession.sessionKey)
+                return
+            }
             panelManager.collapse()
         }
         .onChange(of: isExpanded) { _, expanded in
