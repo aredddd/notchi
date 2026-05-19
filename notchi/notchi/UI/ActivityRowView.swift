@@ -56,18 +56,19 @@ struct ActivityRowView: View {
 
 struct QuestionPromptView: View {
     let questions: [PendingQuestion]
-    let onSelectOption: ((Int, Int) -> Bool)?
+    let onSubmitAnswers: (([Int: Int]) -> Bool)?
     @State private var currentIndex = 0
+    @State private var selectedOptionIndexesByQuestion: [Int: Int] = [:]
     @State private var hoveredOptionIndex: Int?
     @State private var pressedOptionIndex: Int?
     @State private var isSubmitting = false
 
     init(
         questions: [PendingQuestion],
-        onSelectOption: ((Int, Int) -> Bool)? = nil
+        onSubmitAnswers: (([Int: Int]) -> Bool)? = nil
     ) {
         self.questions = questions
-        self.onSelectOption = onSelectOption
+        self.onSubmitAnswers = onSubmitAnswers
     }
 
     private var clampedIndex: Int {
@@ -82,6 +83,10 @@ struct QuestionPromptView: View {
         questions.count > 1
     }
 
+    private var currentHasClickableOptions: Bool {
+        current.options.contains { !PendingQuestion.isFreeTextOptionLabel($0.label) }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             questionHeader
@@ -89,6 +94,10 @@ struct QuestionPromptView: View {
             questionText
                 .padding(.bottom, 6)
             optionsList
+            if onSubmitAnswers != nil, !currentHasClickableOptions {
+                terminalRequiredHint
+                    .padding(.top, 6)
+            }
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -99,11 +108,8 @@ struct QuestionPromptView: View {
                 .stroke(TerminalColors.claudeOrange.opacity(0.3), lineWidth: 1)
         )
         .padding(.vertical, 4)
-        .onChange(of: questions.count) {
-            currentIndex = 0
-            hoveredOptionIndex = nil
-            pressedOptionIndex = nil
-            isSubmitting = false
+        .onChange(of: questions.map(\.question)) {
+            resetAnswerState()
         }
         .onReceive(NotificationCenter.default.publisher(for: .notchiQuestionOptionShortcut)) { notification in
             guard let optionNumber = notification.object as? Int else { return }
@@ -137,21 +143,21 @@ struct QuestionPromptView: View {
 
     private var paginationControls: some View {
         HStack(spacing: 2) {
-            Button(action: { currentIndex = max(0, currentIndex - 1) }) {
+            Button(action: { showQuestion(at: currentIndex - 1) }) {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundColor(currentIndex > 0 ? TerminalColors.primaryText : TerminalColors.dimmedText)
             }
             .buttonStyle(.plain)
-            .disabled(currentIndex == 0)
+            .disabled(isSubmitting || currentIndex == 0)
 
-            Button(action: { currentIndex = min(questions.count - 1, currentIndex + 1) }) {
+            Button(action: { showQuestion(at: currentIndex + 1) }) {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundColor(currentIndex < questions.count - 1 ? TerminalColors.primaryText : TerminalColors.dimmedText)
             }
             .buttonStyle(.plain)
-            .disabled(currentIndex == questions.count - 1)
+            .disabled(isSubmitting || currentIndex == questions.count - 1)
         }
     }
 
@@ -165,7 +171,7 @@ struct QuestionPromptView: View {
     private var optionsList: some View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach(Array(current.options.enumerated()), id: \.offset) { index, option in
-                let isInteractive = onSelectOption != nil
+                let isInteractive = onSubmitAnswers != nil
                 let isFreeTextOption = PendingQuestion.isFreeTextOptionLabel(option.label)
 
                 if isInteractive, !isFreeTextOption {
@@ -175,6 +181,7 @@ struct QuestionPromptView: View {
                         highlightedOptionRow(
                             index: index,
                             option: option,
+                            isSelected: selectedOptionIndexesByQuestion[clampedIndex] == index,
                             isPressed: pressedOptionIndex == index
                         )
                     }
@@ -201,10 +208,11 @@ struct QuestionPromptView: View {
     private func highlightedOptionRow(
         index: Int,
         option: (label: String, description: String?),
+        isSelected: Bool = false,
         isPressed: Bool = false
     ) -> some View {
         let isHovered = hoveredOptionIndex == index
-        let style = highlightedOptionStyle(isHovered: isHovered, isPressed: isPressed)
+        let style = highlightedOptionStyle(isHovered: isHovered, isSelected: isSelected, isPressed: isPressed)
 
         return HStack(alignment: .center, spacing: 9) {
             Text("\(index + 1)")
@@ -255,7 +263,14 @@ struct QuestionPromptView: View {
         .animation(.interactiveSpring(response: 0.16, dampingFraction: 0.72, blendDuration: 0.04), value: isPressed)
     }
 
-    private func highlightedOptionStyle(isHovered: Bool, isPressed: Bool) -> (
+    private var terminalRequiredHint: some View {
+        Text("Use terminal for this question")
+            .font(.system(size: 10, weight: .medium))
+            .foregroundColor(TerminalColors.dimmedText)
+            .italic()
+    }
+
+    private func highlightedOptionStyle(isHovered: Bool, isSelected: Bool, isPressed: Bool) -> (
         rowFill: Color,
         badgeFill: Color,
         stroke: Color,
@@ -281,13 +296,21 @@ struct QuestionPromptView: View {
             shadowRadius = 3
             shadowYOffset = 1
         } else if isHovered {
-            rowFillOpacity = 0.34
+            rowFillOpacity = isSelected ? 0.4 : 0.34
             badgeFillOpacity = 1
-            strokeOpacity = 0.46
-            strokeWidth = 1
-            shadowOpacity = 0.14
+            strokeOpacity = isSelected ? 0.58 : 0.46
+            strokeWidth = isSelected ? 1.15 : 1
+            shadowOpacity = isSelected ? 0.16 : 0.14
             shadowRadius = 5
             shadowYOffset = 2
+        } else if isSelected {
+            rowFillOpacity = 0.28
+            badgeFillOpacity = 1
+            strokeOpacity = 0.34
+            strokeWidth = 1
+            shadowOpacity = 0.06
+            shadowRadius = 3
+            shadowYOffset = 1
         } else {
             rowFillOpacity = 0.22
             badgeFillOpacity = 0.92
@@ -331,20 +354,57 @@ struct QuestionPromptView: View {
 
     private func selectOption(index optionIndex: Int) {
         guard !isSubmitting,
-              let onSelectOption,
+              let onSubmitAnswers,
               current.options.indices.contains(optionIndex),
               !PendingQuestion.isFreeTextOptionLabel(current.options[optionIndex].label) else {
             return
         }
 
+        selectedOptionIndexesByQuestion[clampedIndex] = optionIndex
+
+        if selectedOptionIndexesByQuestion.count < questions.count {
+            HapticService.shared.playNavigationTap()
+            if let nextIndex = nextUnansweredQuestionIndex(after: clampedIndex) {
+                showQuestion(at: nextIndex)
+            }
+            return
+        }
+
         isSubmitting = true
-        let didSubmit = onSelectOption(clampedIndex, optionIndex)
+        let didSubmit = onSubmitAnswers(selectedOptionIndexesByQuestion)
         if didSubmit {
             HapticService.shared.playNavigationTap()
-        }
-        if !didSubmit {
+        } else {
             isSubmitting = false
         }
+    }
+
+    private func showQuestion(at index: Int) {
+        currentIndex = min(max(0, index), questions.count - 1)
+        hoveredOptionIndex = nil
+        pressedOptionIndex = nil
+    }
+
+    private func nextUnansweredQuestionIndex(after index: Int) -> Int? {
+        let count = questions.count
+        guard count > 0 else { return nil }
+
+        for offset in 1...count {
+            let candidate = (index + offset) % count
+            if selectedOptionIndexesByQuestion[candidate] == nil {
+                return candidate
+            }
+        }
+
+        return nil
+    }
+
+    private func resetAnswerState() {
+        currentIndex = 0
+        selectedOptionIndexesByQuestion = [:]
+        hoveredOptionIndex = nil
+        pressedOptionIndex = nil
+        isSubmitting = false
     }
 
     private func optionRow(

@@ -319,28 +319,38 @@ final class SessionStore {
     }
 
     @discardableResult
-    func answerPendingQuestion(
+    func answerPendingQuestions(
         in sessionKey: ProviderSessionKey,
-        questionIndex: Int,
-        optionIndex: Int
+        selectedOptionIndexesByQuestion: [Int: Int]
     ) -> Bool {
         guard let session = sessions[sessionKey],
               let context = session.pendingQuestionResponseContext,
-              session.pendingQuestions.indices.contains(questionIndex) else {
+              !session.pendingQuestions.isEmpty else {
             return false
         }
 
-        let question = session.pendingQuestions[questionIndex]
-        guard question.options.indices.contains(optionIndex) else { return false }
+        var answers: [String: String] = [:]
+        for questionIndex in session.pendingQuestions.indices {
+            guard let optionIndex = selectedOptionIndexesByQuestion[questionIndex] else {
+                return false
+            }
 
-        let option = question.options[optionIndex]
-        guard !PendingQuestion.isFreeTextOptionLabel(option.label),
-              let responseData = HookInteractionResponse.makeAskUserQuestionResponse(
-                hookEventName: context.hookEventName,
-                toolInput: context.toolInput,
-                question: question.question,
-                answer: option.label
-              ) else {
+            let question = session.pendingQuestions[questionIndex]
+            guard question.options.indices.contains(optionIndex) else { return false }
+
+            let option = question.options[optionIndex]
+            guard !PendingQuestion.isFreeTextOptionLabel(option.label) else {
+                return false
+            }
+
+            answers[question.question] = option.label
+        }
+
+        guard let responseData = HookInteractionResponse.makeAskUserQuestionResponse(
+            hookEventName: context.hookEventName,
+            toolInput: context.toolInput,
+            answers: answers
+        ) else {
             return false
         }
 
@@ -722,13 +732,14 @@ nonisolated enum HookInteractionResponse {
     static func makeAskUserQuestionResponse(
         hookEventName: String,
         toolInput: [String: AnyCodable]?,
-        question: String,
-        answer: String
+        answers: [String: String]
     ) -> Data? {
         var updatedInput = recursivelyUnwrapped(toolInput) as? [String: Any] ?? [:]
-        var answers = updatedInput["answers"] as? [String: Any] ?? [:]
-        answers[question] = answer
-        updatedInput["answers"] = answers
+        var updatedAnswers = updatedInput["answers"] as? [String: Any] ?? [:]
+        for (question, answer) in answers {
+            updatedAnswers[question] = answer
+        }
+        updatedInput["answers"] = updatedAnswers
 
         let output: [String: Any]
         if hookEventName == NormalizedAgentEvent.permissionRequest.rawValue {

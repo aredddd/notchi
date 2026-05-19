@@ -579,12 +579,11 @@ struct ExpandedPanelView: View {
 
                                 let questions = effectiveSession?.pendingQuestions ?? []
                                 if !questions.isEmpty {
-                                    QuestionPromptView(questions: questions) { questionIndex, optionIndex in
+                                    QuestionPromptView(questions: questions) { selectedOptionIndexesByQuestion in
                                         guard let sessionKey = effectiveSession?.sessionKey else { return false }
-                                        return sessionStore.answerPendingQuestion(
+                                        return sessionStore.answerPendingQuestions(
                                             in: sessionKey,
-                                            questionIndex: questionIndex,
-                                            optionIndex: optionIndex
+                                            selectedOptionIndexesByQuestion: selectedOptionIndexesByQuestion
                                         )
                                     }
                                         .id("question-prompt")

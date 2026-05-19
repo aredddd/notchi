@@ -134,7 +134,7 @@ final class SessionStoreTests: XCTestCase {
                 "Trigger a tool permission prompt",
                 "Configure tool permissions",
                 "Chat about this",
-                "Type something.",
+                "Type something",
             ]
         )
         XCTAssertEqual(
@@ -242,10 +242,9 @@ final class SessionStoreTests: XCTestCase {
         }
         XCTAssertTrue(responseWaiterRegistered)
 
-        XCTAssertTrue(store.answerPendingQuestion(
+        XCTAssertTrue(store.answerPendingQuestions(
             in: session.sessionKey,
-            questionIndex: 0,
-            optionIndex: 1
+            selectedOptionIndexesByQuestion: [0: 1]
         ))
 
         let maybeResponseData = await responseTask.value
@@ -261,6 +260,81 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertEqual(answers, ["Which path?": "Careful"])
         XCTAssertEqual(questions.first?["question"] as? String, "Which path?")
         XCTAssertEqual((questions.first?["options"] as? [[String: Any]])?.count, 2)
+        XCTAssertTrue(session.pendingQuestions.isEmpty)
+    }
+
+    func testAnswerPendingQuestionsSubmitsAllAnswersTogether() async throws {
+        let store = SessionStore.shared
+        let sessionId = "ask-user-question-multi-answer-\(UUID().uuidString)"
+        let requestId = HookInteractionRequest.id(
+            provider: .claude,
+            rawSessionId: sessionId,
+            hookEventName: NormalizedAgentEvent.preToolUse.rawValue,
+            toolUseId: "tool-ask"
+        )
+        let session = store.process(makeEvent(
+            sessionId: sessionId,
+            event: .preToolUse,
+            status: "running_tool",
+            tool: "AskUserQuestion",
+            toolUseId: "tool-ask",
+            toolInput: [
+                "questions": AnyCodable([
+                    [
+                        "question": "Which path?",
+                        "options": [
+                            ["label": "Fast"],
+                            ["label": "Careful"],
+                        ],
+                    ],
+                    [
+                        "question": "Which target?",
+                        "options": [
+                            ["label": "Production"],
+                            ["label": "Staging"],
+                        ],
+                    ],
+                ]),
+            ],
+            interactionRequestId: requestId
+        ))
+        let responseTask = Task.detached {
+            HookInteractionResponseBroker.shared.waitForResponse(
+                requestId: requestId,
+                timeout: 1
+            )
+        }
+        let responseWaiterRegistered = await waitUntil(timeout: 1) {
+            HookInteractionResponseBroker.shared.isWaitingForResponse(requestId: requestId)
+        }
+        XCTAssertTrue(responseWaiterRegistered)
+
+        XCTAssertFalse(store.answerPendingQuestions(
+            in: session.sessionKey,
+            selectedOptionIndexesByQuestion: [0: 1]
+        ))
+        XCTAssertFalse(session.pendingQuestions.isEmpty)
+
+        XCTAssertTrue(store.answerPendingQuestions(
+            in: session.sessionKey,
+            selectedOptionIndexesByQuestion: [0: 1, 1: 0]
+        ))
+
+        let maybeResponseData = await responseTask.value
+        let responseData = try XCTUnwrap(maybeResponseData)
+        let response = try XCTUnwrap(JSONSerialization.jsonObject(with: responseData) as? [String: Any])
+        let hookOutput = try XCTUnwrap(response["hookSpecificOutput"] as? [String: Any])
+        let updatedInput = try XCTUnwrap(hookOutput["updatedInput"] as? [String: Any])
+        let answers = try XCTUnwrap(updatedInput["answers"] as? [String: String])
+        let questions = try XCTUnwrap(updatedInput["questions"] as? [[String: Any]])
+
+        XCTAssertEqual(hookOutput["hookEventName"] as? String, "PreToolUse")
+        XCTAssertEqual(hookOutput["permissionDecision"] as? String, "allow")
+        XCTAssertEqual(answers, [
+            "Which path?": "Careful",
+            "Which target?": "Production",
+        ])
+        XCTAssertEqual(questions.count, 2)
         XCTAssertTrue(session.pendingQuestions.isEmpty)
     }
 
@@ -344,8 +418,7 @@ final class SessionStoreTests: XCTestCase {
                     "list": [NSNull(), "kept"],
                 ]),
             ],
-            question: "Which path?",
-            answer: "Careful"
+            answers: ["Which path?": "Careful"]
         ))
         let response = try XCTUnwrap(JSONSerialization.jsonObject(with: responseData) as? [String: Any])
         let hookOutput = try XCTUnwrap(response["hookSpecificOutput"] as? [String: Any])
@@ -406,10 +479,9 @@ final class SessionStoreTests: XCTestCase {
             )
         ))
 
-        XCTAssertFalse(store.answerPendingQuestion(
+        XCTAssertFalse(store.answerPendingQuestions(
             in: session.sessionKey,
-            questionIndex: 0,
-            optionIndex: 0
+            selectedOptionIndexesByQuestion: [0: 0]
         ))
         XCTAssertTrue(session.pendingQuestions.isEmpty)
         XCTAssertEqual(session.task, .idle)
@@ -443,10 +515,9 @@ final class SessionStoreTests: XCTestCase {
             interactionRequestId: requestId
         ))
 
-        XCTAssertFalse(store.answerPendingQuestion(
+        XCTAssertFalse(store.answerPendingQuestions(
             in: session.sessionKey,
-            questionIndex: 0,
-            optionIndex: 1
+            selectedOptionIndexesByQuestion: [0: 1]
         ))
         XCTAssertFalse(session.pendingQuestions.isEmpty)
     }
