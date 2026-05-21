@@ -156,7 +156,6 @@ private struct InlineAnswerTextField: NSViewRepresentable {
             let movement = notification.userInfo?["NSTextMovement"] as? Int
             if movement == NSReturnTextMovement, !didSubmitCurrentEditingSession {
                 submitCurrentText(currentEditor()?.string ?? stringValue)
-                return
             }
 
             didSubmitCurrentEditingSession = false
