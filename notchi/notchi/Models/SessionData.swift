@@ -1,8 +1,19 @@
 import Foundation
 struct PendingQuestion {
+    static let freeTextOptionLabel = "Type something"
+
     let question: String
     let header: String?
     let options: [(label: String, description: String?)]
+
+    static func isFreeTextOptionLabel(_ label: String) -> Bool {
+        normalizedFreeTextLabel(label)
+            .caseInsensitiveCompare(normalizedFreeTextLabel(freeTextOptionLabel)) == .orderedSame
+    }
+
+    private static func normalizedFreeTextLabel(_ label: String) -> String {
+        label.trimmingCharacters(in: CharacterSet(charactersIn: ". "))
+    }
 }
 
 @MainActor
@@ -32,6 +43,7 @@ final class SessionData: Identifiable {
     private(set) var promptSubmitTime: Date?
     private(set) var permissionMode: String = "default"
     private(set) var pendingQuestions: [PendingQuestion] = []
+    private(set) var pendingQuestionResponseContext: PendingQuestionResponseContext?
     private(set) var currentSpinnerVerb: String
     private(set) var claudeProcessId: Int?
     private(set) var codexProcessId: Int?
@@ -299,13 +311,18 @@ final class SessionData: Identifiable {
         }
     }
 
-    func setPendingQuestions(_ questions: [PendingQuestion]) {
+    func setPendingQuestions(
+        _ questions: [PendingQuestion],
+        responseContext: PendingQuestionResponseContext? = nil
+    ) {
         pendingQuestions = questions
+        pendingQuestionResponseContext = responseContext
         lastActivity = Date()
     }
 
     func clearPendingQuestions() {
         pendingQuestions = []
+        pendingQuestionResponseContext = nil
     }
 
     func recordPreToolUse(tool: String?, toolInput: [String: Any]?, toolUseId: String?) {
@@ -398,4 +415,17 @@ final class SessionData: Identifiable {
         let seconds = total % 60
         formattedDuration = String(format: "%dm %02ds", minutes, seconds)
     }
+}
+
+nonisolated struct PendingQuestionResponseContext: Sendable {
+    enum Kind: Sendable {
+        case askUserQuestion
+        case permissionRequest
+    }
+
+    let requestId: String
+    let hookEventName: String
+    let toolInput: [String: AnyCodable]?
+    let permissionSuggestions: [AnyCodable]?
+    let kind: Kind
 }

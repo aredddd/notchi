@@ -7,6 +7,7 @@ enum NotchConstants {
 
 extension Notification.Name {
     static let notchiShouldCollapse = Notification.Name("notchiShouldCollapse")
+    static let notchiQuestionOptionShortcut = Notification.Name("notchiQuestionOptionShortcut")
 }
 
 private let cornerRadiusInsets = (
@@ -368,10 +369,15 @@ struct NotchContentView: View {
             await startLaunchWave()
         }
         .onReceive(NotificationCenter.default.publisher(for: .notchiShouldCollapse)) { _ in
+            if let activeSession, !activeSession.pendingQuestions.isEmpty {
+                sessionStore.cancelPendingQuestion(in: activeSession.sessionKey)
+                return
+            }
             panelManager.collapse()
         }
         .onChange(of: isExpanded) { _, expanded in
             startSpriteHandoff(for: expanded)
+            updateKeyboardFocus(for: expanded)
             if !expanded {
                 showingPanelSettings = false
                 showingPanelSettingsDetail = false
@@ -567,6 +573,12 @@ struct NotchContentView: View {
             spriteHandoff = nil
             spriteHandoffProgress = 0
         }
+    }
+
+    private func updateKeyboardFocus(for expanded: Bool) {
+        guard expanded,
+              let panel = NSApp.windows.first(where: { $0 is NotchPanel }) else { return }
+        panel.makeKey()
     }
 
     private func startLaunchGlow() {
