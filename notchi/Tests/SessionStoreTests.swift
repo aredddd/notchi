@@ -338,6 +338,72 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertTrue(session.pendingQuestions.isEmpty)
     }
 
+    func testAnswerPendingQuestionsSubmitsCustomTextAnswers() async throws {
+        let store = SessionStore.shared
+        let sessionId = "ask-user-question-custom-answer-\(UUID().uuidString)"
+        let requestId = HookInteractionRequest.id(
+            provider: .claude,
+            rawSessionId: sessionId,
+            hookEventName: NormalizedAgentEvent.preToolUse.rawValue,
+            toolUseId: "tool-ask"
+        )
+        let session = store.process(makeEvent(
+            sessionId: sessionId,
+            event: .preToolUse,
+            status: "running_tool",
+            tool: "AskUserQuestion",
+            toolUseId: "tool-ask",
+            toolInput: [
+                "questions": AnyCodable([
+                    [
+                        "question": "Which path?",
+                        "options": [
+                            ["label": "Fast"],
+                            ["label": "Careful"],
+                        ],
+                    ],
+                    [
+                        "question": "Which target?",
+                        "options": [
+                            ["label": "Production"],
+                            ["label": "Staging"],
+                        ],
+                    ],
+                ]),
+            ],
+            interactionRequestId: requestId
+        ))
+        let responseTask = Task.detached {
+            HookInteractionResponseBroker.shared.waitForResponse(
+                requestId: requestId,
+                timeout: 1
+            )
+        }
+        let responseWaiterRegistered = await waitUntil(timeout: 1) {
+            HookInteractionResponseBroker.shared.isWaitingForResponse(requestId: requestId)
+        }
+        XCTAssertTrue(responseWaiterRegistered)
+
+        XCTAssertTrue(store.answerPendingQuestions(
+            in: session.sessionKey,
+            selectedOptionIndexesByQuestion: [0: 1],
+            customAnswersByQuestion: [1: "  Local sandbox  "]
+        ))
+
+        let maybeResponseData = await responseTask.value
+        let responseData = try XCTUnwrap(maybeResponseData)
+        let response = try XCTUnwrap(JSONSerialization.jsonObject(with: responseData) as? [String: Any])
+        let hookOutput = try XCTUnwrap(response["hookSpecificOutput"] as? [String: Any])
+        let updatedInput = try XCTUnwrap(hookOutput["updatedInput"] as? [String: Any])
+        let answers = try XCTUnwrap(updatedInput["answers"] as? [String: String])
+
+        XCTAssertEqual(answers, [
+            "Which path?": "Careful",
+            "Which target?": "Local sandbox",
+        ])
+        XCTAssertTrue(session.pendingQuestions.isEmpty)
+    }
+
     func testCancelPendingQuestionSubmitsClaudePreToolUseDenyResponse() async throws {
         let store = SessionStore.shared
         let sessionId = "ask-user-question-cancel-\(UUID().uuidString)"

@@ -1,3 +1,4 @@
+import AppKit
 import Combine
 import SwiftUI
 
@@ -54,18 +55,131 @@ struct ActivityRowView: View {
     }
 }
 
+private struct InlineAnswerTextField: NSViewRepresentable {
+    @Binding var text: String
+    let isFocused: Bool
+    let onSubmit: (String) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeNSView(context: Context) -> NSTextField {
+        let textField = SubmittingTextField(string: text)
+        textField.delegate = context.coordinator
+        textField.target = context.coordinator
+        textField.action = #selector(Coordinator.submitFromAction(_:))
+        textField.onSubmitText = { submittedText in
+            context.coordinator.submit(submittedText)
+        }
+        textField.isBezeled = false
+        textField.isBordered = false
+        textField.drawsBackground = false
+        textField.focusRingType = .none
+        textField.placeholderString = "Type answer"
+        textField.font = .systemFont(ofSize: 10)
+        textField.textColor = .white
+        textField.lineBreakMode = .byTruncatingTail
+        textField.cell?.usesSingleLineMode = true
+        textField.cell?.wraps = false
+        textField.cell?.isScrollable = true
+        return textField
+    }
+
+    func updateNSView(_ textField: NSTextField, context: Context) {
+        context.coordinator.parent = self
+        if let textField = textField as? SubmittingTextField {
+            textField.onSubmitText = { submittedText in
+                context.coordinator.submit(submittedText)
+            }
+        }
+
+        if textField.stringValue != text {
+            textField.stringValue = text
+        }
+
+        guard isFocused else { return }
+        Task { @MainActor in
+            guard textField.window?.firstResponder !== textField.currentEditor() else { return }
+            textField.window?.makeFirstResponder(textField)
+            textField.currentEditor()?.selectedRange = NSRange(location: textField.stringValue.count, length: 0)
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: InlineAnswerTextField
+
+        init(_ parent: InlineAnswerTextField) {
+            self.parent = parent
+        }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let textField = notification.object as? NSTextField else { return }
+            parent.text = textField.stringValue
+        }
+
+        @objc func submitFromAction(_ sender: NSTextField) {
+            (sender as? SubmittingTextField)?.submitCurrentText(sender.stringValue)
+        }
+
+        func submit(_ submittedText: String) {
+            parent.text = submittedText
+            parent.onSubmit(submittedText)
+        }
+
+        func control(
+            _ control: NSControl,
+            textView: NSTextView,
+            doCommandBy commandSelector: Selector
+        ) -> Bool {
+            guard commandSelector == #selector(NSResponder.insertNewline(_:)) ||
+                commandSelector == #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)),
+                let textField = control as? SubmittingTextField
+            else {
+                return false
+            }
+            textField.submitCurrentText(textView.string)
+            return true
+        }
+    }
+
+    private final class SubmittingTextField: NSTextField {
+        var onSubmitText: ((String) -> Void)?
+        private var didSubmitCurrentEditingSession = false
+
+        func submitCurrentText(_ text: String) {
+            didSubmitCurrentEditingSession = true
+            onSubmitText?(text)
+        }
+
+        override func textDidEndEditing(_ notification: Notification) {
+            let movement = notification.userInfo?["NSTextMovement"] as? Int
+            if movement == NSReturnTextMovement, !didSubmitCurrentEditingSession {
+                submitCurrentText(currentEditor()?.string ?? stringValue)
+                return
+            }
+
+            didSubmitCurrentEditingSession = false
+            super.textDidEndEditing(notification)
+        }
+    }
+}
+
 struct QuestionPromptView: View {
     let questions: [PendingQuestion]
-    let onSubmitAnswers: (([Int: Int]) -> Bool)?
+    let onSubmitAnswers: (([Int: Int], [Int: String]) -> Bool)?
     @State private var currentIndex = 0
     @State private var selectedOptionIndexesByQuestion: [Int: Int] = [:]
+    @State private var customAnswersByQuestion: [Int: String] = [:]
+    @State private var editingFreeTextQuestionIndex: Int?
     @State private var hoveredOptionIndex: Int?
     @State private var pressedOptionIndex: Int?
     @State private var isSubmitting = false
+    @State private var focusedFreeTextQuestionIndex: Int?
 
     init(
         questions: [PendingQuestion],
-        onSubmitAnswers: (([Int: Int]) -> Bool)? = nil
+        onSubmitAnswers: (([Int: Int], [Int: String]) -> Bool)? = nil
     ) {
         self.questions = questions
         self.onSubmitAnswers = onSubmitAnswers
@@ -83,10 +197,6 @@ struct QuestionPromptView: View {
         questions.count > 1
     }
 
-    private var currentHasClickableOptions: Bool {
-        current.options.contains { !PendingQuestion.isFreeTextOptionLabel($0.label) }
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             questionHeader
@@ -94,10 +204,6 @@ struct QuestionPromptView: View {
             questionText
                 .padding(.bottom, 6)
             optionsList
-            if onSubmitAnswers != nil, !currentHasClickableOptions {
-                terminalRequiredHint
-                    .padding(.top, 6)
-            }
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -189,20 +295,105 @@ struct QuestionPromptView: View {
                     .disabled(isSubmitting)
                     .simultaneousGesture(pressGesture(for: index))
                 } else if isInteractive {
-                    highlightedOptionRow(
-                        index: index,
-                        option: (
-                            label: option.label,
-                            description: option.description ?? "Use terminal for custom text"
-                        ),
-                        isPressed: false
-                    )
+                    if editingFreeTextQuestionIndex == clampedIndex {
+                        freeTextInputRow(index: index, option: option)
+                    } else {
+                        highlightedOptionRow(
+                            index: index,
+                            option: (
+                                label: option.label,
+                                description: freeTextDescription(for: clampedIndex)
+                            ),
+                            isSelected: customAnswersByQuestion[clampedIndex]?.isEmpty == false,
+                            isPressed: pressedOptionIndex == index
+                        )
+                        .onTapGesture {
+                            beginFreeTextEntry()
+                        }
+                        .simultaneousGesture(pressGesture(for: index))
+                    }
                 } else {
                     optionRow(index: index, option: option)
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func freeTextInputRow(
+        index: Int,
+        option: (label: String, description: String?)
+    ) -> some View {
+        let questionIndex = clampedIndex
+        let answer = customAnswersByQuestion[questionIndex] ?? ""
+        let isHovered = hoveredOptionIndex == index
+        let isSelected = !answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let style = highlightedOptionStyle(isHovered: isHovered, isSelected: isSelected, isPressed: false)
+
+        return HStack(alignment: .center, spacing: 9) {
+            Text("\(index + 1)")
+                .font(.system(size: 9, weight: .semibold).monospacedDigit())
+                .foregroundColor(TerminalColors.primaryText.opacity(0.82))
+                .frame(width: 20, height: 20)
+                .background(
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(style.badgeFill)
+                )
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(option.label)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(TerminalColors.primaryText)
+
+                InlineAnswerTextField(text: Binding(
+                    get: { customAnswersByQuestion[questionIndex] ?? "" },
+                    set: { newValue in
+                        customAnswersByQuestion[questionIndex] = newValue
+                        selectedOptionIndexesByQuestion[questionIndex] = nil
+                    }
+                ), isFocused: focusedFreeTextQuestionIndex == questionIndex) { submittedText in
+                    submitFreeTextAnswer(submittedText, for: questionIndex)
+                }
+                .frame(height: 14)
+            }
+
+            Spacer(minLength: 8)
+
+            Button {
+                submitFreeTextAnswer(answer, for: questionIndex)
+            } label: {
+                Image(systemName: "arrow.turn.down.left")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(isSelected ? TerminalColors.primaryText : TerminalColors.dimmedText)
+                    .frame(width: 20, height: 20)
+            }
+            .buttonStyle(.plain)
+            .disabled(!isSelected || isSubmitting)
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(style.rowFill)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(style.stroke, lineWidth: style.strokeWidth)
+                )
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 8))
+        .shadow(color: style.shadowColor, radius: style.shadowRadius, y: style.shadowYOffset)
+        .onHover { isHovering in
+            if isHovering {
+                hoveredOptionIndex = index
+            } else if hoveredOptionIndex == index {
+                hoveredOptionIndex = nil
+            }
+        }
+        .onAppear {
+            focusedFreeTextQuestionIndex = questionIndex
+        }
+        .animation(.easeOut(duration: 0.12), value: isHovered)
     }
 
     private func highlightedOptionRow(
@@ -263,11 +454,9 @@ struct QuestionPromptView: View {
         .animation(.interactiveSpring(response: 0.16, dampingFraction: 0.72, blendDuration: 0.04), value: isPressed)
     }
 
-    private var terminalRequiredHint: some View {
-        Text("Use terminal for this question")
-            .font(.system(size: 10, weight: .medium))
-            .foregroundColor(TerminalColors.dimmedText)
-            .italic()
+    private func freeTextDescription(for questionIndex: Int) -> String {
+        let answer = customAnswersByQuestion[questionIndex]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return answer.isEmpty ? "Type a custom answer" : answer
     }
 
     private func highlightedOptionStyle(isHovered: Bool, isSelected: Bool, isPressed: Bool) -> (
@@ -355,14 +544,22 @@ struct QuestionPromptView: View {
     private func selectOption(index optionIndex: Int) {
         guard !isSubmitting,
               let onSubmitAnswers,
-              current.options.indices.contains(optionIndex),
-              !PendingQuestion.isFreeTextOptionLabel(current.options[optionIndex].label) else {
+              current.options.indices.contains(optionIndex) else {
+            return
+        }
+
+        if PendingQuestion.isFreeTextOptionLabel(current.options[optionIndex].label) {
+            pressedOptionIndex = nil
+            beginFreeTextEntry()
             return
         }
 
         selectedOptionIndexesByQuestion[clampedIndex] = optionIndex
+        customAnswersByQuestion[clampedIndex] = nil
+        editingFreeTextQuestionIndex = nil
+        focusedFreeTextQuestionIndex = nil
 
-        if selectedOptionIndexesByQuestion.count < questions.count {
+        if !hasAnsweredAllQuestions {
             HapticService.shared.playNavigationTap()
             if let nextIndex = nextUnansweredQuestionIndex(after: clampedIndex) {
                 showQuestion(at: nextIndex)
@@ -371,7 +568,7 @@ struct QuestionPromptView: View {
         }
 
         isSubmitting = true
-        let didSubmit = onSubmitAnswers(selectedOptionIndexesByQuestion)
+        let didSubmit = onSubmitAnswers(selectedOptionIndexesByQuestion, customAnswersByQuestion)
         if didSubmit {
             HapticService.shared.playNavigationTap()
         } else {
@@ -379,10 +576,64 @@ struct QuestionPromptView: View {
         }
     }
 
+    private var hasAnsweredAllQuestions: Bool {
+        questions.indices.allSatisfy(hasAnswer(for:))
+    }
+
+    private func hasAnswer(for questionIndex: Int) -> Bool {
+        if selectedOptionIndexesByQuestion[questionIndex] != nil { return true }
+        let trimmed = customAnswersByQuestion[questionIndex]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return !trimmed.isEmpty
+    }
+
+    private func beginFreeTextEntry() {
+        guard !isSubmitting, onSubmitAnswers != nil else { return }
+        editingFreeTextQuestionIndex = clampedIndex
+        selectedOptionIndexesByQuestion[clampedIndex] = nil
+        if customAnswersByQuestion[clampedIndex] == nil {
+            customAnswersByQuestion[clampedIndex] = ""
+        }
+        focusedFreeTextQuestionIndex = clampedIndex
+    }
+
+    private func submitFreeTextAnswer(_ rawAnswer: String, for questionIndex: Int) {
+        let answer = rawAnswer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !isSubmitting,
+              let onSubmitAnswers,
+              questionIndex == clampedIndex,
+              !answer.isEmpty else {
+            return
+        }
+
+        customAnswersByQuestion[questionIndex] = answer
+        selectedOptionIndexesByQuestion[questionIndex] = nil
+        editingFreeTextQuestionIndex = nil
+        focusedFreeTextQuestionIndex = nil
+
+        if !hasAnsweredAllQuestions {
+            HapticService.shared.playNavigationTap()
+            if let nextIndex = nextUnansweredQuestionIndex(after: questionIndex) {
+                showQuestion(at: nextIndex)
+            }
+            return
+        }
+
+        isSubmitting = true
+        let didSubmit = onSubmitAnswers(selectedOptionIndexesByQuestion, customAnswersByQuestion)
+        if didSubmit {
+            HapticService.shared.playNavigationTap()
+        } else {
+            isSubmitting = false
+            editingFreeTextQuestionIndex = questionIndex
+            focusedFreeTextQuestionIndex = questionIndex
+        }
+    }
+
     private func showQuestion(at index: Int) {
         currentIndex = min(max(0, index), questions.count - 1)
         hoveredOptionIndex = nil
         pressedOptionIndex = nil
+        focusedFreeTextQuestionIndex = editingFreeTextQuestionIndex == currentIndex ? currentIndex : nil
     }
 
     private func nextUnansweredQuestionIndex(after index: Int) -> Int? {
@@ -391,7 +642,7 @@ struct QuestionPromptView: View {
 
         for offset in 1...count {
             let candidate = (index + offset) % count
-            if selectedOptionIndexesByQuestion[candidate] == nil {
+            if !hasAnswer(for: candidate) {
                 return candidate
             }
         }
@@ -402,6 +653,9 @@ struct QuestionPromptView: View {
     private func resetAnswerState() {
         currentIndex = 0
         selectedOptionIndexesByQuestion = [:]
+        customAnswersByQuestion = [:]
+        editingFreeTextQuestionIndex = nil
+        focusedFreeTextQuestionIndex = nil
         hoveredOptionIndex = nil
         pressedOptionIndex = nil
         isSubmitting = false

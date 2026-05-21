@@ -328,7 +328,8 @@ final class SessionStore {
     @discardableResult
     func answerPendingQuestions(
         in sessionKey: ProviderSessionKey,
-        selectedOptionIndexesByQuestion: [Int: Int]
+        selectedOptionIndexesByQuestion: [Int: Int],
+        customAnswersByQuestion: [Int: String] = [:]
     ) -> Bool {
         guard let session = sessions[sessionKey],
               let context = session.pendingQuestionResponseContext,
@@ -346,6 +347,13 @@ final class SessionStore {
 
         var answers: [String: String] = [:]
         for questionIndex in session.pendingQuestions.indices {
+            if let customAnswer = customAnswersByQuestion[questionIndex]?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !customAnswer.isEmpty {
+                let question = session.pendingQuestions[questionIndex]
+                answers[question.question] = customAnswer
+                continue
+            }
+
             guard let optionIndex = selectedOptionIndexesByQuestion[questionIndex] else {
                 return false
             }
