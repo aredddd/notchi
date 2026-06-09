@@ -67,4 +67,38 @@ final class NotchContentViewTests: XCTestCase {
             )
         )
     }
+
+    func testGrassIslandRendersOnlyForExpandedActivityView() {
+        XCTAssertTrue(
+            NotchContentView.shouldRenderGrassIsland(
+                isExpanded: true,
+                showingPanelSettings: false
+            )
+        )
+    }
+
+    func testGrassIslandStaysRenderedDuringCollapseHandoff() {
+        XCTAssertTrue(
+            NotchContentView.shouldRenderGrassIsland(
+                isExpanded: false,
+                showingPanelSettings: false,
+                keepsGrassIslandRenderedForHandoff: true
+            )
+        )
+    }
+
+    func testGrassIslandDoesNotRenderWhenCollapsedWithoutHandoffOrShowingSettings() {
+        XCTAssertFalse(
+            NotchContentView.shouldRenderGrassIsland(
+                isExpanded: false,
+                showingPanelSettings: false
+            )
+        )
+        XCTAssertFalse(
+            NotchContentView.shouldRenderGrassIsland(
+                isExpanded: true,
+                showingPanelSettings: true
+            )
+        )
+    }
 }

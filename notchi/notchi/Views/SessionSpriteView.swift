@@ -2,7 +2,7 @@ import SwiftUI
 
 struct SessionSpriteView: View {
     let state: NotchiState
-    let isSelected: Bool
+    let isPrimarySprite: Bool
     var mirrorSeed: String = "session-sprite"
     var animationStartDate: Date = SpriteAnimationPhase.sharedLoopAnchor
     var repeatsAnimation = true
@@ -12,7 +12,7 @@ struct SessionSpriteView: View {
 
     private var bobAmplitude: CGFloat {
         guard state.bobAmplitude > 0 else { return 0 }
-        return isSelected ? state.bobAmplitude : state.bobAmplitude * 0.67
+        return isPrimarySprite ? state.bobAmplitude : state.bobAmplitude * 0.67
     }
 
     private static let sobTrembleAmplitude: CGFloat = 0.2
