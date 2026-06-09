@@ -138,6 +138,7 @@ private struct ShortcutCaptureView: NSViewRepresentable {
         nsView.onReject = onReject
 
         DispatchQueue.main.async {
+            guard nsView.superview != nil else { return }
             nsView.window?.makeFirstResponder(nsView)
         }
     }

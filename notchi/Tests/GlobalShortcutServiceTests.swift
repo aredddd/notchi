@@ -8,7 +8,7 @@ final class GlobalShortcutServiceTests: XCTestCase {
     func testDefaultTogglePanelShortcutUsesCommandOptionN() {
         XCTAssertEqual(GlobalShortcut.defaultTogglePanel.keyCode, UInt32(kVK_ANSI_N))
         XCTAssertEqual(GlobalShortcut.defaultTogglePanel.modifiers, UInt32(cmdKey | optionKey))
-        XCTAssertEqual(GlobalShortcut.defaultTogglePanel.displayName, "⌘⌥N")
+        XCTAssertEqual(GlobalShortcut.defaultTogglePanel.displayName, "⌥⌘N")
     }
 
     func testShortcutRawValueRoundTrips() throws {
@@ -16,7 +16,7 @@ final class GlobalShortcutServiceTests: XCTestCase {
         let decoded = try XCTUnwrap(GlobalShortcut(rawValue: shortcut.rawValue))
 
         XCTAssertEqual(decoded, shortcut)
-        XCTAssertEqual(decoded.displayName, "⌘⇧.")
+        XCTAssertEqual(decoded.displayName, "⇧⌘.")
     }
 
     func testShortcutTranscribesKeyEventWithPrimaryModifier() throws {
@@ -37,7 +37,7 @@ final class GlobalShortcutServiceTests: XCTestCase {
 
         XCTAssertEqual(shortcut.keyCode, UInt32(kVK_ANSI_P))
         XCTAssertEqual(shortcut.modifiers, UInt32(cmdKey | optionKey))
-        XCTAssertEqual(shortcut.displayName, "⌘⌥P")
+        XCTAssertEqual(shortcut.displayName, "⌥⌘P")
     }
 
     func testShortcutRecordingPreviewShowsHeldModifiers() throws {
@@ -54,7 +54,7 @@ final class GlobalShortcutServiceTests: XCTestCase {
             keyCode: UInt16(kVK_Option)
         ))
 
-        XCTAssertEqual(GlobalShortcut.recordingDisplayName(for: event), "⌘⌥")
+        XCTAssertEqual(GlobalShortcut.recordingDisplayName(for: event), "⌥⌘")
     }
 
     func testShortcutRecordingPreviewShowsFullChord() throws {
@@ -71,7 +71,7 @@ final class GlobalShortcutServiceTests: XCTestCase {
             keyCode: UInt16(kVK_ANSI_N)
         ))
 
-        XCTAssertEqual(GlobalShortcut.recordingDisplayName(for: event), "⌘⌥⇧N")
+        XCTAssertEqual(GlobalShortcut.recordingDisplayName(for: event), "⌥⇧⌘N")
     }
 
     func testShortcutRejectsBareKeyEvent() throws {

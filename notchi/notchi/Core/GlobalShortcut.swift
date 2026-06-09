@@ -69,12 +69,13 @@ nonisolated struct GlobalShortcut: Equatable, Sendable {
         return displayName.isEmpty ? nil : displayName
     }
 
+    // Modifier glyph order follows the macOS HIG: Control, Option, Shift, Command.
     nonisolated static func displayName(modifiers: UInt32, keyCode: UInt32? = nil) -> String {
         var symbols: [String] = []
-        if modifiers & UInt32(cmdKey) != 0 { symbols.append("⌘") }
-        if modifiers & UInt32(optionKey) != 0 { symbols.append("⌥") }
         if modifiers & UInt32(controlKey) != 0 { symbols.append("⌃") }
+        if modifiers & UInt32(optionKey) != 0 { symbols.append("⌥") }
         if modifiers & UInt32(shiftKey) != 0 { symbols.append("⇧") }
+        if modifiers & UInt32(cmdKey) != 0 { symbols.append("⌘") }
         if let keyCode {
             symbols.append(keyDisplayName(for: keyCode))
         }
