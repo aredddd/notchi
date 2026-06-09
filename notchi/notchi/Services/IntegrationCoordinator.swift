@@ -36,13 +36,17 @@ nonisolated final class IntegrationCoordinator: @unchecked Sendable {
 
     func installHooksIfNeeded() {
         for provider in AgentProvider.allCases {
-            _ = adaptersByProvider[provider]?.installIfNeeded()
+            _ = adaptersByProvider[provider]?.installIfNeededStatus()
         }
     }
 
     @discardableResult
-    func installHooksIfNeeded(for provider: AgentProvider) -> Bool {
-        adaptersByProvider[provider]?.installIfNeeded() ?? false
+    func installHooksIfNeededStatus(for provider: AgentProvider) -> AgentHookInstallStatus {
+        adaptersByProvider[provider]?.installIfNeededStatus() ?? .providerUnavailable
+    }
+
+    func installStatus(for provider: AgentProvider) -> AgentHookInstallStatus {
+        adaptersByProvider[provider]?.installStatus() ?? .providerUnavailable
     }
 
     func isInstalled(for provider: AgentProvider) -> Bool {

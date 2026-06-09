@@ -4,13 +4,6 @@ import os.log
 
 private let logger = Logger(subsystem: "com.ruban.notchi", category: "PanelSettingsView")
 
-private enum HookInstallBadgeState {
-    case installed
-    case notInstalled
-    case providerMissing
-    case error
-}
-
 private struct StatusBadge {
     let text: String
     let color: Color
@@ -65,10 +58,8 @@ struct PanelSettingsView: View {
     private let sessionStore: SessionStore
     @AppStorage(AppSettings.hideSpriteWhenIdleKey) private var hideSpriteWhenIdle = false
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
-    @State private var claudeHooksInstalled = IntegrationCoordinator.shared.isInstalled(for: .claude)
-    @State private var claudeHooksError = false
-    @State private var codexHooksInstalled = IntegrationCoordinator.shared.isInstalled(for: .codex)
-    @State private var codexHooksError = false
+    @State private var claudeHooksStatus = IntegrationCoordinator.shared.installStatus(for: .claude)
+    @State private var codexHooksStatus = IntegrationCoordinator.shared.installStatus(for: .codex)
     @State private var areHooksExpanded = false
     @ObservedObject private var updateManager = UpdateManager.shared
     private var usageConnected: Bool { ClaudeUsageService.shared.isConnected }
@@ -103,6 +94,7 @@ struct PanelSettingsView: View {
         .padding(.horizontal, SettingsLayout.panelHorizontalPadding)
         .padding(.top, SettingsLayout.topPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onAppear(perform: refreshHookStatuses)
     }
 
     private var mainSettings: some View {
@@ -182,15 +174,15 @@ struct PanelSettingsView: View {
 
     private var hooksProviderList: some View {
         VStack(alignment: .leading, spacing: 4) {
-            hookProviderRow(for: .claude, installed: claudeHooksInstalled, error: claudeHooksError)
-            hookProviderRow(for: .codex, installed: codexHooksInstalled, error: codexHooksError)
+            hookProviderRow(for: .claude, status: claudeHooksStatus)
+            hookProviderRow(for: .codex, status: codexHooksStatus)
         }
         .padding(.vertical, SettingsLayout.pickerInset)
         .background(TerminalColors.subtleBackground)
         .cornerRadius(8)
     }
 
-    private func hookProviderRow(for provider: AgentProvider, installed: Bool, error: Bool) -> some View {
+    private func hookProviderRow(for provider: AgentProvider, status: AgentHookInstallStatus) -> some View {
         Button(action: { installHooksIfNeeded(for: provider) }) {
             HStack(spacing: 8) {
                 Text(provider.displayName)
@@ -199,8 +191,7 @@ struct PanelSettingsView: View {
 
                 Spacer()
 
-                let status = hookProviderStatus(for: provider, installed: installed, error: error)
-                statusBadge(status)
+                statusBadge(hookProviderStatus(status))
             }
             .padding(.horizontal, SettingsLayout.pickerOptionHorizontalPadding)
             .padding(.vertical, SettingsLayout.pickerOptionVerticalPadding)
@@ -301,6 +292,9 @@ struct PanelSettingsView: View {
         withAnimation(.spring(response: 0.3)) {
             areHooksExpanded.toggle()
         }
+        if areHooksExpanded {
+            refreshHookStatuses()
+        }
     }
 
     private func handleUpdatesAction() {
@@ -311,19 +305,6 @@ struct PanelSettingsView: View {
         }
     }
 
-    private func hookStatus(for provider: AgentProvider, installed: Bool, error: Bool) -> HookInstallBadgeState {
-        guard IntegrationCoordinator.shared.isProviderAvailable(for: provider) else {
-            return .providerMissing
-        }
-        return hookStatus(installed: installed, error: error)
-    }
-
-    private func hookStatus(installed: Bool, error: Bool) -> HookInstallBadgeState {
-        if error { return .error }
-        if installed { return .installed }
-        return .notInstalled
-    }
-
     private func hooksSummaryStatus() -> StatusBadge {
         let states = availableHookStates()
 
@@ -331,7 +312,7 @@ struct PanelSettingsView: View {
             return StatusBadge(text: "Unavailable", color: TerminalColors.amber)
         }
 
-        if states.contains(.error) {
+        if states.contains(.failed) {
             return StatusBadge(text: "Error", color: TerminalColors.red)
         }
 
@@ -347,30 +328,21 @@ struct PanelSettingsView: View {
         return StatusBadge(text: "Set Up", color: TerminalColors.amber)
     }
 
-    private func availableHookStates() -> [HookInstallBadgeState] {
-        AgentProvider.allCases.compactMap { provider in
-            guard IntegrationCoordinator.shared.isProviderAvailable(for: provider) else {
-                return nil
-            }
-
-            switch provider {
-            case .claude:
-                return hookStatus(installed: claudeHooksInstalled, error: claudeHooksError)
-            case .codex:
-                return hookStatus(installed: codexHooksInstalled, error: codexHooksError)
-            }
+    private func availableHookStates() -> [AgentHookInstallStatus] {
+        [claudeHooksStatus, codexHooksStatus].filter { status in
+            status != .providerUnavailable
         }
     }
 
-    private func hookProviderStatus(for provider: AgentProvider, installed: Bool, error: Bool) -> StatusBadge {
-        switch hookStatus(for: provider, installed: installed, error: error) {
+    private func hookProviderStatus(_ status: AgentHookInstallStatus) -> StatusBadge {
+        switch status {
         case .installed:
             StatusBadge(text: "Installed", color: TerminalColors.green)
         case .notInstalled:
             StatusBadge(text: "Install", color: TerminalColors.amber)
-        case .providerMissing:
+        case .providerUnavailable:
             StatusBadge(text: "Not Found", color: TerminalColors.amber)
-        case .error:
+        case .failed:
             StatusBadge(text: "Error", color: TerminalColors.red)
         }
     }
@@ -381,7 +353,7 @@ struct PanelSettingsView: View {
             isClaudeUsageConnected: usageConnected,
             hasActiveClaudeSession: sessions.contains { $0.provider == .claude },
             hasActiveCodexSession: sessions.contains { $0.provider == .codex },
-            codexHooksInstalled: codexHooksInstalled
+            codexHooksInstalled: codexHooksStatus == .installed
         )
         return StatusBadge(text: state.text, color: state.color)
     }
@@ -389,36 +361,17 @@ struct PanelSettingsView: View {
     private func installHooksIfNeeded(for provider: AgentProvider) {
         switch provider {
         case .claude:
-            guard !claudeHooksInstalled else { return }
-            claudeHooksError = false
+            guard claudeHooksStatus != .installed else { return }
+            claudeHooksStatus = IntegrationCoordinator.shared.installHooksIfNeededStatus(for: provider)
         case .codex:
-            guard !codexHooksInstalled else { return }
-            codexHooksError = false
+            guard codexHooksStatus != .installed else { return }
+            codexHooksStatus = IntegrationCoordinator.shared.installHooksIfNeededStatus(for: provider)
         }
+    }
 
-        guard IntegrationCoordinator.shared.isProviderAvailable(for: provider) else {
-            switch provider {
-            case .claude:
-                claudeHooksInstalled = false
-                claudeHooksError = false
-            case .codex:
-                codexHooksInstalled = false
-                codexHooksError = false
-            }
-            return
-        }
-
-        let success = IntegrationCoordinator.shared.installHooksIfNeeded(for: provider)
-        let installed = IntegrationCoordinator.shared.isInstalled(for: provider)
-
-        switch provider {
-        case .claude:
-            claudeHooksInstalled = installed
-            claudeHooksError = !success || !installed
-        case .codex:
-            codexHooksInstalled = installed
-            codexHooksError = !success || !installed
-        }
+    private func refreshHookStatuses() {
+        claudeHooksStatus = IntegrationCoordinator.shared.installStatus(for: .claude)
+        codexHooksStatus = IntegrationCoordinator.shared.installStatus(for: .codex)
     }
 
     private func statusBadge(_ text: String, color: Color) -> some View {
