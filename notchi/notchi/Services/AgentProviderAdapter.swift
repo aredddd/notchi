@@ -1,5 +1,12 @@
 import Foundation
 
+nonisolated enum AgentHookInstallStatus: Equatable, Sendable {
+    case installed
+    case notInstalled
+    case providerUnavailable
+    case failed
+}
+
 nonisolated protocol AgentProviderAdapter: Sendable {
     nonisolated var provider: AgentProvider { get }
 
@@ -12,4 +19,24 @@ nonisolated protocol AgentProviderAdapter: Sendable {
     nonisolated func isInstalled() -> Bool
     nonisolated func configureForLaunch()
     nonisolated func normalize(_ envelope: AgentHookEnvelope) -> HookEvent?
+}
+
+nonisolated extension AgentProviderAdapter {
+    func installStatus() -> AgentHookInstallStatus {
+        guard isProviderAvailable() else {
+            return .providerUnavailable
+        }
+        return isInstalled() ? .installed : .notInstalled
+    }
+
+    @discardableResult
+    func installIfNeededStatus() -> AgentHookInstallStatus {
+        guard isProviderAvailable() else {
+            return .providerUnavailable
+        }
+        guard installIfNeeded(), isInstalled() else {
+            return .failed
+        }
+        return .installed
+    }
 }

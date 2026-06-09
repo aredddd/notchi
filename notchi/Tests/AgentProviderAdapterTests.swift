@@ -6,8 +6,21 @@ final class AgentProviderAdapterTests: XCTestCase {
         nonisolated let provider: AgentProvider
         nonisolated let available: Bool
         nonisolated let installed: Bool
+        nonisolated let installSucceeds: Bool
 
-        nonisolated func installIfNeeded() -> Bool { installed }
+        nonisolated init(
+            provider: AgentProvider,
+            available: Bool,
+            installed: Bool,
+            installSucceeds: Bool = true
+        ) {
+            self.provider = provider
+            self.available = available
+            self.installed = installed
+            self.installSucceeds = installSucceeds
+        }
+
+        nonisolated func installIfNeeded() -> Bool { installSucceeds }
         nonisolated func isProviderAvailable() -> Bool { available }
         nonisolated func isInstalled() -> Bool { installed }
         nonisolated func configureForLaunch() {}
@@ -291,5 +304,29 @@ final class AgentProviderAdapterTests: XCTestCase {
 
         XCTAssertFalse(coordinator.isProviderAvailable(for: .claude))
         XCTAssertTrue(coordinator.isProviderAvailable(for: .codex))
+    }
+
+    func testIntegrationCoordinatorDistinguishesProviderUnavailableFromInstallFailure() {
+        let coordinator = IntegrationCoordinator(
+            socketServer: SocketServer(socketPath: "/tmp/notchi-test-\(UUID().uuidString).sock"),
+            adapters: [
+                TestProviderAdapter(
+                    provider: .claude,
+                    available: false,
+                    installed: false
+                ),
+                TestProviderAdapter(
+                    provider: .codex,
+                    available: true,
+                    installed: false,
+                    installSucceeds: false
+                ),
+            ]
+        )
+
+        XCTAssertEqual(coordinator.installStatus(for: .claude), .providerUnavailable)
+        XCTAssertEqual(coordinator.installHooksIfNeededStatus(for: .claude), .providerUnavailable)
+        XCTAssertEqual(coordinator.installStatus(for: .codex), .notInstalled)
+        XCTAssertEqual(coordinator.installHooksIfNeededStatus(for: .codex), .failed)
     }
 }

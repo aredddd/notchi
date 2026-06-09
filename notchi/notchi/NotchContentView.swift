@@ -46,6 +46,7 @@ struct NotchContentView: View {
 
         let direction: Direction
         let sessionId: String
+        let keepsGrassIslandRendered: Bool
     }
 
     struct LaunchWave: Equatable {
@@ -154,6 +155,32 @@ struct NotchContentView: View {
             mirrorSeed: "fallback-\(launchSpriteFamily.rawValue)"
         )
     }
+
+    static func shouldRenderGrassIsland(
+        isExpanded: Bool,
+        showingPanelSettings: Bool,
+        keepsGrassIslandRenderedForHandoff: Bool = false
+    ) -> Bool {
+        shouldShowGrassIsland(isExpanded: isExpanded, showingPanelSettings: showingPanelSettings)
+            || keepsGrassIslandRenderedForHandoff
+    }
+
+    static func shouldShowGrassIsland(isExpanded: Bool, showingPanelSettings: Bool) -> Bool {
+        isExpanded && !showingPanelSettings
+    }
+
+    private var shouldRenderGrassIsland: Bool {
+        Self.shouldRenderGrassIsland(
+            isExpanded: isExpanded,
+            showingPanelSettings: showingPanelSettings,
+            keepsGrassIslandRenderedForHandoff: spriteHandoff?.keepsGrassIslandRendered == true
+        )
+    }
+
+    private var shouldShowGrassIsland: Bool {
+        Self.shouldShowGrassIsland(isExpanded: isExpanded, showingPanelSettings: showingPanelSettings)
+    }
+
     private var collapsedHoverHorizontalInset: CGFloat {
         !isExpanded && panelManager.isCollapsedHovered
             ? NotchPanelManager.collapsedHoverHorizontalInset
@@ -281,6 +308,10 @@ struct NotchContentView: View {
         .easeInOut(duration: LaunchWaveTiming.preparationDuration)
     }
 
+    private var grassIslandOpacityAnimation: Animation {
+        .easeOut(duration: SpriteHandoffTiming.collapseAnimationDuration)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             notchLayout
@@ -295,20 +326,23 @@ struct NotchContentView: View {
         .background {
             ZStack(alignment: .top) {
                 Color.black
-                GrassIslandView(
-                    sessions: sessionStore.sortedSessions,
-                    selectedSessionId: sessionStore.selectedSessionId,
-                    hoveredSessionId: hoveredSessionId,
-                    handoffSessionId: spriteHandoff?.sessionId,
-                    handoffProgress: spriteHandoffProgress,
-                    isHandoffCollapsing: spriteHandoff?.direction == .collapsing
-                )
+                if shouldRenderGrassIsland {
+                    GrassIslandView(
+                        sessions: sessionStore.sortedSessions,
+                        selectedSessionId: sessionStore.selectedSessionId,
+                        hoveredSessionId: hoveredSessionId,
+                        handoffSessionId: spriteHandoff?.sessionId,
+                        handoffProgress: spriteHandoffProgress,
+                        isHandoffCollapsing: spriteHandoff?.direction == .collapsing
+                    )
                     .frame(height: grassHeight, alignment: .bottom)
-                    .opacity(isExpanded && !showingPanelSettings ? 1 : 0)
+                    .opacity(shouldShowGrassIsland ? 1 : 0)
+                    .animation(grassIslandOpacityAnimation, value: shouldShowGrassIsland)
+                }
             }
         }
         .overlay(alignment: .top) {
-            if isExpanded && !showingPanelSettings {
+            if shouldShowGrassIsland {
                 GrassTapOverlay(
                     sessions: sessionStore.sortedSessions,
                     selectedSessionId: sessionStore.selectedSessionId,
@@ -324,7 +358,7 @@ struct NotchContentView: View {
             }
         }
         .overlay(alignment: .topTrailing) {
-            if isExpanded && !showingPanelSettings {
+            if shouldShowGrassIsland {
                 Button(action: {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                         isActivityCollapsed.toggle()
@@ -375,8 +409,11 @@ struct NotchContentView: View {
             }
             panelManager.collapse()
         }
-        .onChange(of: isExpanded) { _, expanded in
-            startSpriteHandoff(for: expanded)
+        .onChange(of: isExpanded) { wasExpanded, expanded in
+            startSpriteHandoff(
+                for: expanded,
+                keepsGrassIslandRendered: wasExpanded && !showingPanelSettings
+            )
             updateKeyboardFocus(for: expanded)
             if !expanded {
                 showingPanelSettings = false
@@ -535,7 +572,7 @@ struct NotchContentView: View {
         if let headerSpriteContent {
             SessionSpriteView(
                 state: headerSpriteContent.state,
-                isSelected: true,
+                isPrimarySprite: true,
                 mirrorSeed: headerSpriteContent.mirrorSeed,
                 animationStartDate: headerSpriteContent.startedAt,
                 repeatsAnimation: headerSpriteContent.repeatsAnimation
@@ -545,7 +582,7 @@ struct NotchContentView: View {
         }
     }
 
-    private func startSpriteHandoff(for expanded: Bool) {
+    private func startSpriteHandoff(for expanded: Bool, keepsGrassIslandRendered: Bool) {
         spriteHandoffGeneration += 1
         let generation = spriteHandoffGeneration
 
@@ -559,7 +596,8 @@ struct NotchContentView: View {
 
         spriteHandoff = SpriteHandoff(
             direction: expanded ? .expanding : .collapsing,
-            sessionId: activeSession.id
+            sessionId: activeSession.id,
+            keepsGrassIslandRendered: keepsGrassIslandRendered
         )
         spriteHandoffProgress = 0
 

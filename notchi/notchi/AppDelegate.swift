@@ -10,6 +10,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate, SP
     private var notchPanel: NotchPanel?
     private let windowHeight: CGFloat = 500
     private let integrationCoordinator = IntegrationCoordinator.shared
+    private let globalShortcutService = GlobalShortcutService.shared
+    private var minimizeShortcutMonitor: Any?
 
     private var updaterStarted = false
     private var temporarilyRegularForUpdateSession = false
@@ -41,6 +43,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate, SP
         NSApplication.shared.setActivationPolicy(.accessory)
         integrationCoordinator.prepareForLaunch()
         setupNotchWindow()
+        globalShortcutService.start()
+        installMinimizeShortcutGuard()
         observeScreenChanges()
         observeWakeNotifications()
         startHookServices()
@@ -60,6 +64,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate, SP
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        removeMinimizeShortcutGuard()
+        globalShortcutService.stop()
         integrationCoordinator.stop()
         ClaudeUsageService.shared.stopPolling()
     }
@@ -89,6 +95,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate, SP
         panel.orderFrontRegardless()
 
         self.notchPanel = panel
+    }
+
+    private func installMinimizeShortcutGuard() {
+        guard minimizeShortcutMonitor == nil else { return }
+        minimizeShortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self,
+                  NSApp.activationPolicy() == .accessory,
+                  notchPanel?.isVisible == true,
+                  NotchPanel.isMiniaturizeShortcut(event) else {
+                return event
+            }
+
+            return nil
+        }
+    }
+
+    private func removeMinimizeShortcutGuard() {
+        if let minimizeShortcutMonitor {
+            NSEvent.removeMonitor(minimizeShortcutMonitor)
+            self.minimizeShortcutMonitor = nil
+        }
     }
 
     private func observeScreenChanges() {
