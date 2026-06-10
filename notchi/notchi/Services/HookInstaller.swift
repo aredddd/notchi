@@ -173,7 +173,7 @@ struct HookInstaller {
         fileManager.fileExists(atPath: resolution.directoryURL.path)
     }
 
-    static func uninstall() {
+    nonisolated static func uninstall() {
         let claudeConfig = ClaudeConfigDirectoryResolver.resolve()
         let hookScript = claudeConfig.hookScriptURL
         let settings = claudeConfig.settingsURL

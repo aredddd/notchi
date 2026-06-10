@@ -5,6 +5,7 @@ nonisolated enum AgentHookInstallStatus: Equatable, Sendable {
     case notInstalled
     case providerUnavailable
     case failed
+    case disabled
 }
 
 nonisolated protocol AgentProviderAdapter: Sendable {
@@ -12,6 +13,8 @@ nonisolated protocol AgentProviderAdapter: Sendable {
 
     @discardableResult
     nonisolated func installIfNeeded() -> Bool
+
+    nonisolated func uninstall()
 
     /// Returns whether the provider runtime itself is available on this machine,
     /// regardless of whether Notchi has installed hooks for it yet.

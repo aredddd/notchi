@@ -35,7 +35,7 @@ nonisolated final class IntegrationCoordinator: @unchecked Sendable {
     }
 
     func installHooksIfNeeded() {
-        for provider in AgentProvider.allCases {
+        for provider in AgentProvider.allCases where AppSettings.areHooksEnabled(for: provider) {
             _ = adaptersByProvider[provider]?.installIfNeededStatus()
         }
     }
@@ -46,7 +46,22 @@ nonisolated final class IntegrationCoordinator: @unchecked Sendable {
     }
 
     func installStatus(for provider: AgentProvider) -> AgentHookInstallStatus {
-        adaptersByProvider[provider]?.installStatus() ?? .providerUnavailable
+        guard AppSettings.areHooksEnabled(for: provider) else {
+            return .disabled
+        }
+        return adaptersByProvider[provider]?.installStatus() ?? .providerUnavailable
+    }
+
+    @discardableResult
+    func setHooksEnabled(_ enabled: Bool, for provider: AgentProvider) -> AgentHookInstallStatus {
+        AppSettings.setHooksEnabled(enabled, for: provider)
+
+        guard enabled else {
+            adaptersByProvider[provider]?.uninstall()
+            return installStatus(for: provider)
+        }
+
+        return installHooksIfNeededStatus(for: provider)
     }
 
     func isInstalled(for provider: AgentProvider) -> Bool {

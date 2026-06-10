@@ -15,6 +15,10 @@ struct CodexProviderAdapter: AgentProviderAdapter {
         CodexHookInstaller.installIfNeeded()
     }
 
+    nonisolated func uninstall() {
+        CodexHookInstaller.uninstall()
+    }
+
     nonisolated func isProviderAvailable() -> Bool {
         CodexHookInstaller.codexDirectoryExists()
     }

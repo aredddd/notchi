@@ -9,6 +9,10 @@ struct ClaudeProviderAdapter: AgentProviderAdapter {
         HookInstaller.installIfNeeded()
     }
 
+    nonisolated func uninstall() {
+        HookInstaller.uninstall()
+    }
+
     nonisolated func isProviderAvailable() -> Bool {
         HookInstaller.claudeConfigDirectoryExists()
     }

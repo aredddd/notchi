@@ -21,6 +21,7 @@ final class AgentProviderAdapterTests: XCTestCase {
         }
 
         nonisolated func installIfNeeded() -> Bool { installSucceeds }
+        nonisolated func uninstall() {}
         nonisolated func isProviderAvailable() -> Bool { available }
         nonisolated func isInstalled() -> Bool { installed }
         nonisolated func configureForLaunch() {}

@@ -65,6 +65,51 @@ struct CodexHookInstaller {
         return hooksWritten && featureEnabled
     }
 
+    nonisolated static func uninstall() {
+        try? FileManager.default.removeItem(at: hookScriptURL)
+
+        let existingData = try? Data(contentsOf: hooksJSONURL)
+        guard let data = removeManagedHooksJSON(from: existingData) else { return }
+
+        do {
+            try data.write(to: hooksJSONURL)
+        } catch {
+            codexHookLogger.error("Failed to write Codex hooks.json on uninstall: \(error.localizedDescription)")
+        }
+    }
+
+    nonisolated static func removeManagedHooksJSON(from existingData: Data?) -> Data? {
+        guard let existingData,
+              var json = try? JSONSerialization.jsonObject(with: existingData) as? [String: Any],
+              let hooks = json["hooks"] as? [String: Any] else {
+            return nil
+        }
+
+        var updatedHooks: [String: Any] = [:]
+        for (event, value) in hooks {
+            guard let entries = value as? [[String: Any]] else {
+                updatedHooks[event] = value
+                continue
+            }
+
+            let prunedEntries = pruneManagedHooks(from: entries)
+            if !prunedEntries.isEmpty {
+                updatedHooks[event] = prunedEntries
+            }
+        }
+
+        if updatedHooks.isEmpty {
+            json.removeValue(forKey: "hooks")
+        } else {
+            json["hooks"] = updatedHooks
+        }
+
+        return try? JSONSerialization.data(
+            withJSONObject: json,
+            options: [.prettyPrinted, .sortedKeys]
+        )
+    }
+
     nonisolated static func upsertHooksJSON(from existingData: Data?, command: String) -> Data? {
         var json: [String: Any] = [:]
         if let existingData,
