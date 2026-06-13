@@ -366,6 +366,43 @@ final class NotchPanelManagerTests: XCTestCase {
         XCTAssertFalse(manager.isExpanded)
     }
 
+    func testCollapsedTrackingRectCoversHoverCompactAndHoveredRects() async {
+        let defaults = makeDefaults()
+        defaults.set(false, forKey: AppSettings.hideSpriteWhenIdleKey)
+        let sessionCount = SessionCountBox(0)
+        let manager = makeManager(sessionCount: sessionCount, defaults: defaults)
+
+        configureGeometry(for: manager)
+
+        let expectedTrackingRect = CGRect(x: 92.5, y: -5, width: 289, height: 43)
+        XCTAssertEqual(manager.collapsedTrackingRect, expectedTrackingRect)
+        XCTAssertTrue(manager.collapsedTrackingRect.contains(manager.compactNotchRect))
+
+        manager.handleMouseLocationChanged(CGPoint(x: manager.notchRect.midX, y: manager.notchRect.midY))
+        XCTAssertTrue(manager.isCollapsedHovered)
+        XCTAssertTrue(manager.collapsedTrackingRect.contains(manager.activeCollapsedRect))
+    }
+
+    func testHandleCollapsedHoverExitedClearsHoverAfterDelay() async {
+        let defaults = makeDefaults()
+        defaults.set(false, forKey: AppSettings.hideSpriteWhenIdleKey)
+        let sessionCount = SessionCountBox(0)
+        let manager = makeManager(
+            sessionCount: sessionCount,
+            defaults: defaults,
+            hoverExitDelay: .milliseconds(10)
+        )
+
+        configureGeometry(for: manager)
+        manager.handleMouseLocationChanged(CGPoint(x: manager.notchRect.midX, y: manager.notchRect.midY))
+        XCTAssertTrue(manager.isCollapsedHovered)
+
+        manager.handleCollapsedHoverExited()
+        try? await Task.sleep(for: .milliseconds(30))
+
+        XCTAssertFalse(manager.isCollapsedHovered)
+    }
+
     private func makeDefaults() -> UserDefaults {
         let suiteName = "NotchPanelManagerTests-\(UUID().uuidString)"
         defaultsSuiteNames.append(suiteName)

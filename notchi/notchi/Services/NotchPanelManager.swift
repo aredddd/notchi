@@ -43,7 +43,6 @@ final class NotchPanelManager {
     private var cachedShouldUseCompactIdle = false
     private var pendingHoverExitTask: Task<Void, Never>?
     private var mouseDownMonitor: EventMonitor?
-    private var mouseMoveMonitor: EventMonitor?
 
     private(set) var isExpanded = false
     private(set) var isPinned = false
@@ -62,6 +61,10 @@ final class NotchPanelManager {
 
     var activeCollapsedRect: CGRect {
         isCollapsedHovered ? Self.makeCollapsedHoverRect(baseRect: collapsedBaseRect) : collapsedBaseRect
+    }
+
+    var collapsedTrackingRect: CGRect {
+        Self.makeCollapsedHoverRect(baseRect: notchRect)
     }
 
     init(
@@ -186,7 +189,7 @@ final class NotchPanelManager {
         setCollapsedHovered(true)
     }
 
-    private func handleCollapsedHoverExited() {
+    func handleCollapsedHoverExited() {
         guard !isExpanded, isCollapsedHovered else { return }
         scheduleHoverExit()
     }
@@ -257,14 +260,6 @@ final class NotchPanelManager {
             }
         }
         mouseDownMonitor?.start()
-
-        mouseMoveMonitor = EventMonitor(mask: [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                self.handleMouseLocationChanged(self.mouseLocationProvider())
-            }
-        }
-        mouseMoveMonitor?.start()
     }
 
     private static func screenLocation(from event: NSEvent) -> CGPoint {

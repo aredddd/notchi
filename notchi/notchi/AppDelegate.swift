@@ -150,6 +150,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate, SP
 
             NotchPanelManager.shared.updateGeometry(for: screen)
             panel.setFrame(windowFrame(for: screen), display: true)
+            panel.contentView?.updateTrackingAreas()
         }
     }
 
