@@ -154,9 +154,22 @@ nonisolated enum CodexUsageSnapshotResolver {
 
         guard tailOffset > 0 else { return data }
 
-        // Drop the partial line at the seek point so parsing starts on a line boundary.
+        // A window that begins right after a newline already starts a whole line,
+        // so only drop the leading fragment when the seek lands mid-line.
+        if tailBeginsOnLineBoundary(fileHandle, tailOffset: tailOffset) {
+            return data
+        }
+
         guard let firstNewline = data.firstIndex(of: UInt8(ascii: "\n")) else { return nil }
         return data[data.index(after: firstNewline)...]
+    }
+
+    private static func tailBeginsOnLineBoundary(_ fileHandle: FileHandle, tailOffset: UInt64) -> Bool {
+        guard (try? fileHandle.seek(toOffset: tailOffset - 1)) != nil,
+              let previousByte = try? fileHandle.read(upToCount: 1) else {
+            return false
+        }
+        return previousByte.first == UInt8(ascii: "\n")
     }
 
     private static func parseDate(_ rawValue: String?) -> Date? {
