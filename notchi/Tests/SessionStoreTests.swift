@@ -1032,6 +1032,72 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertEqual(metadata, CodexThreadMetadata(title: "Archived", archived: true))
     }
 
+    func testCodexThreadMetadataResolverMatchesMultiplePathsFromSingleSQLiteOutput() {
+        let separator = "\u{1F}"
+        let reviewPath = "/tmp/review-rollout.jsonl"
+        let archivedPath = "/tmp/archived-rollout.jsonl"
+        let unmatchedPath = "/tmp/missing-rollout.jsonl"
+        let output = [
+            ["thread-1", reviewPath, "526576696577", "0"].joined(separator: separator),
+            ["thread-2", archivedPath, "4172636869766564", "1"].joined(separator: separator),
+        ].joined(separator: "\n")
+
+        let metadataByPath = CodexThreadMetadataResolver.metadata(
+            fromSQLiteOutput: output,
+            matchingTranscriptPaths: [reviewPath, archivedPath, unmatchedPath]
+        )
+
+        XCTAssertEqual(metadataByPath, [
+            reviewPath: CodexThreadMetadata(title: "Review", archived: false),
+            archivedPath: CodexThreadMetadata(title: "Archived", archived: true),
+        ])
+    }
+
+    func testRefreshCodexThreadMetadataResolvesAllSessionsInOneBatch() {
+        final class BatchRecorder: @unchecked Sendable {
+            var batches: [[String]] = []
+        }
+
+        let store = SessionStore.shared
+        let firstPath = "/tmp/batch-first-rollout.jsonl"
+        let secondPath = "/tmp/batch-second-rollout.jsonl"
+
+        let firstSession = store.process(makeEvent(
+            sessionId: "codex-batch-first-\(UUID().uuidString)",
+            provider: .codex,
+            cwd: "/tmp/notchi",
+            transcriptPath: firstPath,
+            event: .userPromptSubmitted,
+            status: "processing",
+            userPrompt: "first"
+        ))
+        let secondSession = store.process(makeEvent(
+            sessionId: "codex-batch-second-\(UUID().uuidString)",
+            provider: .codex,
+            cwd: "/tmp/notchi",
+            transcriptPath: secondPath,
+            event: .userPromptSubmitted,
+            status: "processing",
+            userPrompt: "second"
+        ))
+
+        let recorder = BatchRecorder()
+        store.setCodexMetadataBatchResolverForTesting { transcriptPaths in
+            recorder.batches.append(transcriptPaths)
+            return [
+                firstPath: CodexThreadMetadata(title: "First title", archived: false),
+                secondPath: CodexThreadMetadata(title: "Second title", archived: false),
+            ]
+        }
+
+        _ = store.refreshCodexThreadMetadataForTesting()
+
+        XCTAssertEqual(recorder.batches.count, 1)
+        XCTAssertEqual(Set(recorder.batches.first ?? []), [firstPath, secondPath])
+        XCTAssertEqual(firstSession.codexTitle, "First title")
+        XCTAssertEqual(secondSession.codexTitle, "Second title")
+    }
+
     func testCodexCompactionSignalResolverParsesLatestTokenLimitLogRow() {
         let separator = "\u{1F}"
         let threadId = "11111111-1111-1111-1111-111111111111"
