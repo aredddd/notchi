@@ -53,8 +53,7 @@ struct CodexHookInstaller {
 
         do {
             let bundledData = try Data(contentsOf: bundled)
-            try bundledData.write(to: hookScriptURL, options: .atomic)
-            try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: hookScriptURL.path)
+            try HookFile.writeScriptIfNeeded(bundledData, to: hookScriptURL, fileManager: fileManager)
         } catch {
             codexHookLogger.error("Failed to install Codex hook script: \(error.localizedDescription)")
             return false
@@ -213,6 +212,8 @@ struct CodexHookInstaller {
             return false
         }
 
+        guard data != existingData else { return true }
+
         do {
             try data.write(to: url)
             return true
@@ -225,6 +226,8 @@ struct CodexHookInstaller {
     nonisolated private static func updateConfig(at url: URL) -> Bool {
         let existingContents = try? String(contentsOf: url, encoding: .utf8)
         let updatedContents = upsertFeatureFlag(in: existingContents)
+
+        guard updatedContents != existingContents else { return true }
 
         do {
             try updatedContents.write(to: url, atomically: true, encoding: .utf8)
