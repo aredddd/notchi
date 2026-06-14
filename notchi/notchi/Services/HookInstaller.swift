@@ -178,43 +178,71 @@ struct HookInstaller {
 
         try? FileManager.default.removeItem(at: hookScript)
 
-        guard let data = try? Data(contentsOf: settings),
-              var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              var hooks = json["hooks"] as? [String: Any] else {
+        let existingData = try? Data(contentsOf: settings)
+        guard let data = removeManagedHookSettings(from: existingData) else {
+            if let existingData, !existingData.isEmpty,
+               (try? JSONSerialization.jsonObject(with: existingData)) == nil {
+                logger.error("Skipped pruning Claude settings.json on uninstall: file is not valid JSON; stale hook references may remain")
+            }
             return
         }
 
-        for (event, value) in hooks {
-            if var entries = value as? [[String: Any]] {
-                entries.removeAll { entry in
-                    if let entryHooks = entry["hooks"] as? [[String: Any]] {
-                        return entryHooks.contains { hook in
-                            let cmd = hook["command"] as? String ?? ""
-                            return cmd.contains("notchi-hook.sh")
-                        }
-                    }
-                    return false
-                }
+        try? data.write(to: settings)
+    }
 
-                if entries.isEmpty {
-                    hooks.removeValue(forKey: event)
-                } else {
-                    hooks[event] = entries
-                }
+    // WHY: Prune only Notchi-managed hook commands instead of dropping the whole
+    // matcher entry, so an unrelated hook a user added to the same event entry
+    // survives toggling Notchi off. Mirrors CodexHookInstaller's prune behavior.
+    nonisolated static func removeManagedHookSettings(from existingData: Data?) -> Data? {
+        guard let existingData,
+              var json = try? JSONSerialization.jsonObject(with: existingData) as? [String: Any],
+              let hooks = json["hooks"] as? [String: Any] else {
+            return nil
+        }
+
+        var updatedHooks: [String: Any] = [:]
+        for (event, value) in hooks {
+            guard let entries = value as? [[String: Any]] else {
+                updatedHooks[event] = value
+                continue
+            }
+
+            let prunedEntries = pruneManagedHooks(from: entries)
+            if !prunedEntries.isEmpty {
+                updatedHooks[event] = prunedEntries
             }
         }
 
-        if hooks.isEmpty {
+        if updatedHooks.isEmpty {
             json.removeValue(forKey: "hooks")
         } else {
-            json["hooks"] = hooks
+            json["hooks"] = updatedHooks
         }
 
-        if let data = try? JSONSerialization.data(
+        return try? JSONSerialization.data(
             withJSONObject: json,
             options: [.prettyPrinted, .sortedKeys]
-        ) {
-            try? data.write(to: settings)
+        )
+    }
+
+    nonisolated private static func pruneManagedHooks(from entries: [[String: Any]]) -> [[String: Any]] {
+        entries.compactMap { entry in
+            guard let entryHooks = entry["hooks"] as? [[String: Any]] else {
+                return entry
+            }
+
+            let filteredHooks = entryHooks.filter { hook in
+                let command = hook["command"] as? String ?? ""
+                return !command.contains("notchi-hook.sh")
+            }
+
+            guard !filteredHooks.isEmpty else {
+                return nil
+            }
+
+            var updatedEntry = entry
+            updatedEntry["hooks"] = filteredHooks
+            return updatedEntry
         }
     }
 }

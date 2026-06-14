@@ -85,4 +85,75 @@ final class HookInstallerTests: XCTestCase {
         XCTAssertTrue(script.contains("os.environ.get('NOTCHI_INTERACTIVE', 'true') != 'true'"))
         XCTAssertTrue(script.contains("return hook_event == 'PermissionRequest'"))
     }
+
+    func testRemoveManagedHookSettingsKeepsSiblingHookInSameEntry() throws {
+        let existing = try JSONSerialization.data(withJSONObject: [
+            "hooks": [
+                "PreToolUse": [
+                    [
+                        "matcher": "*",
+                        "hooks": [
+                            ["type": "command", "command": HookInstaller.hookCommand],
+                            ["type": "command", "command": "echo other"],
+                        ],
+                    ],
+                ],
+            ],
+        ])
+
+        let updated = try XCTUnwrap(HookInstaller.removeManagedHookSettings(from: existing))
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: updated) as? [String: Any])
+        let hooks = try XCTUnwrap(json["hooks"] as? [String: Any])
+        let preToolUse = try XCTUnwrap(hooks["PreToolUse"] as? [[String: Any]])
+        let entryHooks = try XCTUnwrap(preToolUse.first?["hooks"] as? [[String: Any]])
+
+        XCTAssertEqual(preToolUse.count, 1)
+        XCTAssertEqual(entryHooks.count, 1)
+        XCTAssertEqual(entryHooks.first?["command"] as? String, "echo other")
+        XCTAssertFalse(HookInstaller.isHookInstalled(in: updated))
+    }
+
+    func testRemoveManagedHookSettingsRemovesNotchiEntryButKeepsUnrelatedEntry() throws {
+        let existing = try JSONSerialization.data(withJSONObject: [
+            "hooks": [
+                "SessionStart": [
+                    [
+                        "hooks": [
+                            ["type": "command", "command": HookInstaller.hookCommand],
+                        ],
+                    ],
+                    [
+                        "hooks": [
+                            ["type": "command", "command": "echo other"],
+                        ],
+                    ],
+                ],
+            ],
+        ])
+
+        let updated = try XCTUnwrap(HookInstaller.removeManagedHookSettings(from: existing))
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: updated) as? [String: Any])
+        let hooks = try XCTUnwrap(json["hooks"] as? [String: Any])
+        let sessionStart = try XCTUnwrap(hooks["SessionStart"] as? [[String: Any]])
+        let remainingHooks = try XCTUnwrap(sessionStart.first?["hooks"] as? [[String: Any]])
+
+        XCTAssertEqual(sessionStart.count, 1)
+        XCTAssertEqual(remainingHooks.first?["command"] as? String, "echo other")
+    }
+
+    func testRemoveManagedHookSettingsDropsHooksKeyWhenOnlyNotchiHooksExist() throws {
+        let existing = try XCTUnwrap(HookInstaller.upsertHookSettings(from: nil, command: HookInstaller.hookCommand))
+
+        let updated = try XCTUnwrap(HookInstaller.removeManagedHookSettings(from: existing))
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: updated) as? [String: Any])
+
+        XCTAssertNil(json["hooks"])
+        XCTAssertFalse(HookInstaller.isHookInstalled(in: updated))
+    }
+
+    func testRemoveManagedHookSettingsReturnsNilWhenNoHooksPresent() throws {
+        let existing = try JSONSerialization.data(withJSONObject: ["someOtherKey": "value"])
+
+        XCTAssertNil(HookInstaller.removeManagedHookSettings(from: existing))
+    }
 }
