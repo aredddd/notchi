@@ -61,6 +61,8 @@ struct PanelSettingsView: View {
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var claudeHooksStatus = IntegrationCoordinator.shared.installStatus(for: .claude)
     @State private var codexHooksStatus = IntegrationCoordinator.shared.installStatus(for: .codex)
+    @State private var claudeHooksEnabled = AppSettings.areHooksEnabled(for: .claude)
+    @State private var codexHooksEnabled = AppSettings.areHooksEnabled(for: .codex)
     @State private var areHooksExpanded = false
     @ObservedObject private var updateManager = UpdateManager.shared
     private var usageConnected: Bool { ClaudeUsageService.shared.isConnected }
@@ -197,7 +199,7 @@ struct PanelSettingsView: View {
     }
 
     private func hookProviderRow(for provider: AgentProvider, status: AgentHookInstallStatus) -> some View {
-        Button(action: { installHooksIfNeeded(for: provider) }) {
+        Button(action: { toggleHooks(for: provider) }) {
             HStack(spacing: 8) {
                 Text(provider.displayName)
                     .font(.system(size: 11))
@@ -206,12 +208,15 @@ struct PanelSettingsView: View {
                 Spacer()
 
                 statusBadge(hookProviderStatus(status))
+
+                ToggleSwitch(isOn: hooksEnabled(for: provider))
             }
             .padding(.horizontal, SettingsLayout.pickerOptionHorizontalPadding)
             .padding(.vertical, SettingsLayout.pickerOptionVerticalPadding)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .disabled(status == .providerUnavailable)
     }
 
     private var emotionAnalysisRow: some View {
@@ -344,12 +349,17 @@ struct PanelSettingsView: View {
             return StatusBadge(text: "Unavailable", color: TerminalColors.amber)
         }
 
-        if states.contains(.failed) {
+        let enabledStates = states.filter { $0 != .disabled }
+        guard !enabledStates.isEmpty else {
+            return StatusBadge(text: "Off", color: TerminalColors.dimmedText)
+        }
+
+        if enabledStates.contains(.failed) {
             return StatusBadge(text: "Error", color: TerminalColors.red)
         }
 
-        let installedCount = states.filter { $0 == .installed }.count
-        if installedCount == states.count {
+        let installedCount = enabledStates.filter { $0 == .installed }.count
+        if installedCount == enabledStates.count {
             return StatusBadge(text: "Installed", color: TerminalColors.green)
         }
 
@@ -376,6 +386,8 @@ struct PanelSettingsView: View {
             StatusBadge(text: "Not Found", color: TerminalColors.amber)
         case .failed:
             StatusBadge(text: "Error", color: TerminalColors.red)
+        case .disabled:
+            StatusBadge(text: "Off", color: TerminalColors.dimmedText)
         }
     }
 
@@ -390,20 +402,37 @@ struct PanelSettingsView: View {
         return StatusBadge(text: state.text, color: state.color)
     }
 
-    private func installHooksIfNeeded(for provider: AgentProvider) {
+    private func hooksEnabled(for provider: AgentProvider) -> Bool {
         switch provider {
         case .claude:
-            guard claudeHooksStatus != .installed else { return }
-            claudeHooksStatus = IntegrationCoordinator.shared.installHooksIfNeededStatus(for: provider)
+            claudeHooksEnabled
         case .codex:
-            guard codexHooksStatus != .installed else { return }
-            codexHooksStatus = IntegrationCoordinator.shared.installHooksIfNeededStatus(for: provider)
+            codexHooksEnabled
+        }
+    }
+
+    private func toggleHooks(for provider: AgentProvider) {
+        let requestedEnabled = !hooksEnabled(for: provider)
+        let status = IntegrationCoordinator.shared.setHooksEnabled(requestedEnabled, for: provider)
+        // Enabling can fail (provider missing, install error), in which case the
+        // preference is not persisted — read it back instead of assuming.
+        let enabled = AppSettings.areHooksEnabled(for: provider)
+
+        switch provider {
+        case .claude:
+            claudeHooksEnabled = enabled
+            claudeHooksStatus = status
+        case .codex:
+            codexHooksEnabled = enabled
+            codexHooksStatus = status
         }
     }
 
     private func refreshHookStatuses() {
         claudeHooksStatus = IntegrationCoordinator.shared.installStatus(for: .claude)
         codexHooksStatus = IntegrationCoordinator.shared.installStatus(for: .codex)
+        claudeHooksEnabled = AppSettings.areHooksEnabled(for: .claude)
+        codexHooksEnabled = AppSettings.areHooksEnabled(for: .codex)
     }
 
     private func statusBadge(_ text: String, color: Color) -> some View {

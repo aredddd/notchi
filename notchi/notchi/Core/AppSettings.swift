@@ -103,6 +103,22 @@ struct AppSettings {
     private static let emotionAnalysisClaudeModelKey = "emotionAnalysisClaudeModel"
     private static let emotionAnalysisOpenAIModelKey = "emotionAnalysisOpenAIModel"
     private static let lastUsedAgentProviderKey = "lastUsedAgentProvider"
+    nonisolated private static let agentHooksDisabledProvidersKey = "agentHooksDisabledProviders"
+
+    nonisolated static func areHooksEnabled(for provider: AgentProvider) -> Bool {
+        let disabledProviders = UserDefaults.standard.stringArray(forKey: agentHooksDisabledProvidersKey) ?? []
+        return !disabledProviders.contains(provider.rawValue)
+    }
+
+    nonisolated static func setHooksEnabled(_ enabled: Bool, for provider: AgentProvider) {
+        var disabledProviders = Set(UserDefaults.standard.stringArray(forKey: agentHooksDisabledProvidersKey) ?? [])
+        if enabled {
+            disabledProviders.remove(provider.rawValue)
+        } else {
+            disabledProviders.insert(provider.rawValue)
+        }
+        UserDefaults.standard.set(disabledProviders.sorted(), forKey: agentHooksDisabledProvidersKey)
+    }
 
     static var isUsageEnabled: Bool {
         get { UserDefaults.standard.bool(forKey: isUsageEnabledKey) }
