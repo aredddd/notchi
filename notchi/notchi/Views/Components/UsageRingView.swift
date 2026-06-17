@@ -5,6 +5,8 @@ struct UsageRingView: View {
     var diameter: CGFloat = 15
     var lineWidth: CGFloat = 3
 
+    @State private var drawProgress: CGFloat = 0
+
     private var clampedPercentage: Int {
         min(max(percentage, 0), 100)
     }
@@ -19,15 +21,21 @@ struct UsageRingView: View {
 
     var body: some View {
         ZStack {
-            Circle()
-                .stroke(ringColor.opacity(0.28), lineWidth: lineWidth)
-            UsageRingArc(fraction: Double(clampedPercentage) / 100)
+            UsageRingArc(fraction: Double(drawProgress))
+                .stroke(
+                    ringColor.opacity(0.28),
+                    style: StrokeStyle(lineWidth: lineWidth, lineCap: .butt)
+                )
+            UsageRingArc(fraction: Double(clampedPercentage) / 100 * Double(drawProgress))
                 .stroke(
                     ringColor,
                     style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
                 )
         }
         .frame(width: diameter, height: diameter)
+        .onAppear {
+            withAnimation(.spring(response: 0.7, dampingFraction: 0.65)) { drawProgress = 1 }
+        }
         .animation(.easeInOut(duration: 0.3), value: clampedPercentage)
     }
 }

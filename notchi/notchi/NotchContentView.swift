@@ -249,6 +249,20 @@ struct NotchContentView: View {
         return baseOffset + 3
     }
 
+    private var collapsedUsageRingOffsetX: CGFloat {
+        let baseOffset = -(sideWidth / 4 + cornerRadiusInsets.closed.top)
+        guard !isExpanded && panelManager.isCollapsedHovered else { return baseOffset }
+        return baseOffset - 6
+    }
+
+    private var collapsedUsageRingOffsetY: CGFloat {
+        !isExpanded && panelManager.isCollapsedHovered ? 2 : -1
+    }
+
+    private var isLaunchWaveActive: Bool {
+        launchWave != nil || isLaunchWavePreparing
+    }
+
     private var collapsedHeaderSpriteVisuals: (opacity: Double, blur: CGFloat) {
         guard let activeSession, let spriteHandoff, spriteHandoff.sessionId == activeSession.id else {
             return (opacity: isExpanded ? 0 : 1, blur: 0)
@@ -563,7 +577,8 @@ struct NotchContentView: View {
             HStack(spacing: 0) {
                 usageRing
                     .frame(width: sideWidth)
-                    .offset(x: -(sideWidth / 4 + cornerRadiusInsets.closed.top / 2))
+                    .scaleEffect(collapsedHeaderSpriteScale, anchor: .bottom)
+                    .offset(x: collapsedUsageRingOffsetX, y: collapsedUsageRingOffsetY)
 
                 Color.clear
                     .frame(width: notchSize.width - cornerRadiusInsets.closed.top - sideWidth)
@@ -580,7 +595,7 @@ struct NotchContentView: View {
 
     @ViewBuilder
     private var usageRing: some View {
-        if let usageRingPercentage {
+        if let usageRingPercentage, !isLaunchWaveActive {
             UsageRingView(percentage: usageRingPercentage)
                 .opacity(collapsedHeaderSpriteVisuals.opacity)
                 .animation(collapsedHeaderSpriteVisibilityAnimation, value: isExpanded)
