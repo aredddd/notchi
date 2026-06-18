@@ -191,7 +191,6 @@ nonisolated enum CodexUsageSnapshotResolver {
                   let observedAt = parseDate(event.timestamp) else {
                 continue
             }
-
             let weeklyUsage = event.payload?.rateLimits?.secondary.map { secondary in
                 QuotaPeriod(
                     utilization: secondary.usedPercent.rounded(),
