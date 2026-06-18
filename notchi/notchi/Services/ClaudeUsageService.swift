@@ -738,7 +738,7 @@ final class ClaudeUsageService {
                 allowsCredentialRecovery: true,
                 prefersRecoveredCredentials: true
             ) else {
-                presentReconnectRequired(message: "Claude authentication needs attention. Tap to reconnect.")
+                presentReconnectRequired(message: "Claude authentication needs attention.")
                 AppSettings.isUsageEnabled = false
                 return
             }
@@ -793,7 +793,7 @@ final class ClaudeUsageService {
                 AppSettings.isUsageEnabled = false
                 clearOAuthBackoffState()
                 if currentUsage != nil {
-                    presentReconnectRequired(message: "Claude authentication needs attention. Tap to reconnect.")
+                    presentReconnectRequired(message: "Claude authentication needs attention.")
                 } else {
                     clearTransientState()
                 }
@@ -1110,7 +1110,7 @@ final class ClaudeUsageService {
             if allow403EmptyHeadersRecovery {
                 await recoverFromEmptyHeadersFallback(afterOAuth403With: accessToken, userInitiated: userInitiated)
             } else {
-                presentReconnectRequired(message: "Claude authentication needs attention. Tap to reconnect.")
+                presentReconnectRequired(message: "Claude authentication needs attention.")
                 stopPolling()
             }
         }
@@ -1439,7 +1439,7 @@ final class ClaudeUsageService {
         if usesCredentialMetadata,
            !credentials.scopes.isEmpty,
            !credentials.scopes.contains("user:profile") {
-            presentReconnectRequired(message: "Claude authentication needs attention. Tap to reconnect.")
+            presentReconnectRequired(message: "Claude authentication needs attention.")
             stopPolling()
             return .handled
         }
@@ -1476,11 +1476,11 @@ final class ClaudeUsageService {
 
     private func resolveAuthFailureResolution(after401With currentToken: String) -> ClaudeUsageAuthFailureResolution {
         guard let credentials = dependencies.getOAuthCredentials(false) else {
-            return .reconnect("Token expired. Tap to reconnect.")
+            return .reconnect("Token expired.")
         }
 
         if credentialsRequireReconnect(credentials) {
-            return .reconnect("Claude authentication needs attention. Tap to reconnect.")
+            return .reconnect("Claude authentication needs attention.")
         }
 
         let credentialToken = credentials.accessToken.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1512,7 +1512,7 @@ final class ClaudeUsageService {
             return
         }
 
-        presentReconnectRequired(message: "Claude authentication needs attention. Tap to reconnect.")
+        presentReconnectRequired(message: "Claude authentication needs attention.")
         stopPolling()
     }
 
@@ -1526,7 +1526,7 @@ final class ClaudeUsageService {
             logger.warning(
                 "OAuth 403 requires reconnect - errorType: \(errorTypeLog, privacy: .public), requestID: \(requestIDLog, privacy: .public), message: \(rawMessage, privacy: .public)"
             )
-            presentReconnectRequired(message: "Claude authentication needs attention. Tap to reconnect.")
+            presentReconnectRequired(message: "Claude authentication needs attention.")
             stopPolling()
             return .handled
 

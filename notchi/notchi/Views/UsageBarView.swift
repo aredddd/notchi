@@ -15,6 +15,8 @@ struct UsageBarView: View {
     var onConnect: (() -> Void)?
     var onRetry: (() -> Void)?
 
+    @State private var isPulsing = false
+
     init(
         usage: QuotaPeriod?,
         isUsingExtraUsage: Bool = false,
@@ -45,12 +47,31 @@ struct UsageBarView: View {
         self.onRetry = onRetry
     }
 
-    var actionHint: String? {
+    var shouldShowRecoveryButton: Bool {
+        recoveryAction != .none
+    }
+
+    var recoveryActionLabel: String {
         switch recoveryAction {
         case .retry:
-            return "(tap to retry)"
-        case .reconnect, .waitForClaudeCode, .none:
-            return nil
+            return "Retry"
+        case .reconnect:
+            return "Reconnect"
+        case .waitForClaudeCode:
+            return "Open Claude Code"
+        case .none:
+            return ""
+        }
+    }
+
+    func performRecoveryAction() {
+        switch recoveryAction {
+        case .retry:
+            onRetry?()
+        case .reconnect, .waitForClaudeCode:
+            onConnect?()
+        case .none:
+            break
         }
     }
 
@@ -87,17 +108,6 @@ struct UsageBarView: View {
             && recoveryAction == .none
     }
 
-    var shouldAllowTapAction: Bool {
-        switch recoveryAction {
-        case .reconnect, .waitForClaudeCode:
-            return true
-        case .retry:
-            return usage == nil
-        case .none:
-            return false
-        }
-    }
-
     func resetLabelText(for resetTime: String) -> String {
         if let resetLabelPrefix {
             return "\(resetLabelPrefix) resets in \(resetTime)"
@@ -130,16 +140,9 @@ struct UsageBarView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 if let error, usage == nil {
-                    HStack(spacing: 4) {
-                        Text(error)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(TerminalColors.dimmedText)
-                        if let actionHint {
-                            Text(actionHint)
-                                .font(.system(size: 10))
-                                .foregroundColor(TerminalColors.dimmedText)
-                        }
-                    }
+                    Text(error)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(TerminalColors.red.opacity(0.7))
                 } else if let usage, let resetTime = usage.formattedResetTime {
                     HStack(alignment: .center, spacing: 4) {
                         Text(resetLabelText(for: resetTime))
@@ -167,7 +170,7 @@ struct UsageBarView: View {
                 if isLoading {
                     ProgressView()
                         .controlSize(.mini)
-                } else if usage != nil {
+                } else {
                     HStack(alignment: .center, spacing: 6) {
                         if shouldShowExtraUsageIndicator {
                             Text("Extra Usage")
@@ -175,9 +178,14 @@ struct UsageBarView: View {
                                 .foregroundColor(TerminalColors.red.opacity(0.85))
                                 .lineLimit(1)
                         }
-                        Text("\(effectivePercentage)%")
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .foregroundColor(usageColor)
+                        if usage != nil {
+                            Text("\(effectivePercentage)%")
+                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                .foregroundColor(usageColor)
+                        }
+                        if shouldShowRecoveryButton {
+                            recoveryButton
+                        }
                     }
                     .padding(.bottom, 1)
                 }
@@ -185,19 +193,21 @@ struct UsageBarView: View {
 
             progressBar
         }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            guard shouldAllowTapAction else { return }
-            switch recoveryAction {
-            case .retry:
-                onRetry?()
-            case .reconnect, .waitForClaudeCode:
-                onConnect?()
-            case .none:
-                break
-            }
-        }
         .padding(.top, compact ? 0 : 5)
+    }
+
+    private var recoveryButton: some View {
+        Button(action: performRecoveryAction) {
+            Image(systemName: "arrow.clockwise")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(TerminalColors.red.opacity(0.7))
+                .opacity(isPulsing ? 0.8 : 1.0)
+                .animation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true), value: isPulsing)
+        }
+        .buttonStyle(RecoveryButtonStyle())
+        .help(recoveryActionLabel)
+        .accessibilityLabel(recoveryActionLabel)
+        .onAppear { isPulsing = true }
     }
 
     private var progressBar: some View {
@@ -216,4 +226,17 @@ struct UsageBarView: View {
         .frame(height: 4)
     }
 
+}
+
+private struct RecoveryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.8 : 1.0)
+            .animation(.spring(response: 0.28, dampingFraction: 0.45), value: configuration.isPressed)
+            .onChange(of: configuration.isPressed) { _, pressed in
+                if pressed {
+                    NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+                }
+            }
+    }
 }
