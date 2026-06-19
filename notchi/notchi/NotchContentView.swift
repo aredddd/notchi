@@ -302,8 +302,7 @@ struct NotchContentView: View {
     private var usageRingPercentage: Int? {
         guard AppSettings.isUsageEnabled,
               sessionStore.activeSessionCount > 0,
-              let usage = usageService.currentUsage,
-              !usage.isExpired else { return nil }
+              let usage = usageService.currentUsage else { return nil }
         return usage.usagePercentage
     }
 
@@ -627,7 +626,7 @@ struct NotchContentView: View {
     @ViewBuilder
     private func ringSlot(side: NotchSide) -> some View {
         if let usageRingPercentage, !isLaunchWaveActive {
-            UsageRingView(percentage: usageRingPercentage)
+            UsageRingView(percentage: usageRingPercentage, isStale: usageService.isUsageStale)
                 .opacity(collapsedHeaderSpriteVisuals.opacity)
                 .animation(collapsedHeaderSpriteVisibilityAnimation, value: isExpanded)
                 .frame(width: sideWidth)

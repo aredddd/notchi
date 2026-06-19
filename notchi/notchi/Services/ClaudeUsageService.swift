@@ -702,11 +702,13 @@ final class ClaudeUsageService {
     private static let headersFallbackOAuthProbeInterval: TimeInterval = 600
     private static let headersFallbackRefreshInterval: TimeInterval = 60
     private static let resumeReconnectDelay: TimeInterval = 2
+    private static let selfHealRetryInterval: TimeInterval = 300
 
     private let dependencies: ClaudeUsageServiceDependencies
     private var resolvedUserAgent: String?
     private var pollTimer: (any ClaudeUsagePollTimer)?
     private var pendingResumeReconnectTimer: (any ClaudeUsagePollTimer)?
+    private var selfHealRetryTimer: (any ClaudeUsagePollTimer)?
     private let pollInterval: TimeInterval = 60
     private var pollScheduleGeneration: UInt64 = 0
     private var consecutiveRateLimits = 0
@@ -937,9 +939,45 @@ final class ClaudeUsageService {
         pollTimer = nil
         pollScheduleGeneration &+= 1
         clearPendingResumeReconnect()
+
+        if recoveryAction == .reconnect {
+            scheduleSelfHealRetry()
+        }
+    }
+
+    private func scheduleSelfHealRetry() {
+        guard AppSettings.isUsageEnabled else { return }
+        selfHealRetryTimer?.invalidate()
+        selfHealRetryTimer = dependencies.schedulePoll(Self.selfHealRetryInterval) { [weak self] in
+            Task { @MainActor [weak self] in
+                await self?.attemptSelfHeal()
+            }
+        }
+    }
+
+    private func attemptSelfHeal() async {
+        selfHealRetryTimer = nil
+        guard AppSettings.isUsageEnabled, pollTimer == nil, !isLoading else { return }
+
+        guard let resolution = resolveStoredAccessToken(
+            allowsCredentialRecovery: true,
+            prefersRecoveredCredentials: true
+        ) else {
+            scheduleSelfHealRetry()
+            return
+        }
+
+        cachedToken = resolution.token
+        await performFetch(
+            with: resolution.token,
+            consultCredentialMetadata: resolution.source == .recoveredFromCredentials,
+            cachedCredentials: resolution.credentials
+        )
     }
 
     private func schedulePollTimer(interval: TimeInterval? = nil, minimumInterval: TimeInterval? = nil) {
+        selfHealRetryTimer?.invalidate()
+        selfHealRetryTimer = nil
         pollTimer?.invalidate()
         let baseInterval = interval ?? pollInterval
         let jitter = dependencies.pollJitter()

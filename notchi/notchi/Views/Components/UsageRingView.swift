@@ -4,6 +4,7 @@ struct UsageRingView: View {
     let percentage: Int
     var diameter: CGFloat = 15
     var lineWidth: CGFloat = 3
+    var isStale: Bool = false
 
     @State private var drawProgress: CGFloat = 0
 
@@ -12,11 +13,13 @@ struct UsageRingView: View {
     }
 
     private var ringColor: Color {
+        let base: Color
         switch clampedPercentage {
-        case ..<50: return TerminalColors.green
-        case ..<80: return TerminalColors.amber
-        default: return TerminalColors.red
+        case ..<50: base = TerminalColors.green
+        case ..<80: base = TerminalColors.amber
+        default: base = TerminalColors.red
         }
+        return isStale ? base.opacity(0.5) : base
     }
 
     var body: some View {
