@@ -150,7 +150,7 @@ struct UsageBarView: View {
                 if let error, usage == nil {
                     Text(error)
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(TerminalColors.red.opacity(0.7))
+                        .foregroundColor(TerminalColors.red.opacity(0.8))
                 } else if let usage, let resetTime = usage.formattedResetTime {
                     HStack(alignment: .center, spacing: 4) {
                         Text(resetLabelText(for: resetTime))
@@ -159,8 +159,8 @@ struct UsageBarView: View {
                             .lineLimit(1)
                         if let statusMessage {
                             Text("• \(statusMessage)")
-                                .font(.system(size: 9))
-                                .foregroundColor(TerminalColors.dimmedText)
+                                .font(.system(size: 10))
+                                .foregroundColor(Color.white.opacity(0.35))
                                 .lineLimit(1)
                                 .truncationMode(.tail)
                         }
@@ -210,8 +210,9 @@ struct UsageBarView: View {
         Button(action: performRecoveryAction) {
             Image(systemName: "arrow.clockwise")
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(TerminalColors.red.opacity(0.7))
+                .foregroundColor(isStale ? TerminalColors.secondaryText : TerminalColors.red.opacity(0.8))
                 .opacity(isPulsing ? 0.8 : 1.0)
+                .offset(y: -1)
                 .animation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true), value: isPulsing)
         }
         .buttonStyle(RecoveryButtonStyle())

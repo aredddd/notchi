@@ -1177,7 +1177,7 @@ final class ClaudeUsageService {
             guard let httpResponse = response as? HTTPURLResponse else {
                 presentRetryableIssue(
                     noUsageMessage: "Invalid response, retrying in \(Int(pollInterval))s",
-                    staleMessage: "Updating soon"
+                    staleMessage: "Stale data"
                 )
                 schedulePollTimer()
                 return .handled
@@ -1259,7 +1259,7 @@ final class ClaudeUsageService {
                 clearOAuthBackoffState()
                 presentRetryableIssue(
                     noUsageMessage: "HTTP \(httpResponse.statusCode), retrying in \(Int(pollInterval))s",
-                    staleMessage: "Updating soon"
+                    staleMessage: "Stale data"
                 )
                 schedulePollTimer()
                 logger.warning("API error: HTTP \(httpResponse.statusCode)")
@@ -1286,7 +1286,7 @@ final class ClaudeUsageService {
         } catch {
             presentRetryableIssue(
                 noUsageMessage: "Network error, retrying in \(Int(pollInterval))s",
-                staleMessage: "Updating soon"
+                staleMessage: "Stale data"
             )
             logger.error("OAuth fetch failed: \(error.localizedDescription)")
             schedulePollTimer()
@@ -1331,7 +1331,7 @@ final class ClaudeUsageService {
                 case .normalRetrying, .normalNoRetry:
                     presentRetryableIssue(
                         noUsageMessage: "Invalid response, retrying in \(Int(pollInterval))s",
-                        staleMessage: "Updating soon"
+                        staleMessage: "Stale data"
                     )
                     schedulePollTimer()
                     return .handled
@@ -1355,7 +1355,7 @@ final class ClaudeUsageService {
                 case .normalRetrying:
                     presentRetryableIssue(
                         noUsageMessage: "No rate limit headers, retrying in \(Int(pollInterval))s",
-                        staleMessage: "Updating soon"
+                        staleMessage: "Stale data"
                     )
                     schedulePollTimer()
                     return .noHeadersFallback
@@ -1400,7 +1400,7 @@ final class ClaudeUsageService {
             case .normalRetrying, .normalNoRetry:
                 presentRetryableIssue(
                     noUsageMessage: "Network error, retrying in \(Int(pollInterval))s",
-                    staleMessage: "Updating soon"
+                    staleMessage: "Stale data"
                 )
                 logger.error("Headers fetch failed: \(error.localizedDescription)")
                 schedulePollTimer()
@@ -1887,7 +1887,7 @@ final class ClaudeUsageService {
             clearOAuthBackoffState()
             presentRetryableIssue(
                 noUsageMessage: "No rate limit headers, retrying in \(Int(pollInterval))s",
-                staleMessage: "Updating soon"
+                staleMessage: "Stale data"
             )
             schedulePollTimer()
             return .handled
