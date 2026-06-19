@@ -232,6 +232,10 @@ struct ExpandedPanelView: View {
         state.task == .working || state.task == .compacting || state.task == .waiting
     }
 
+    private var isShowingUsageDetail: Bool {
+        showingUsageDetail && !isActivityCollapsed
+    }
+
     private var hasActivity: Bool {
         guard let session = effectiveSession else { return false }
         return !session.recentEvents.isEmpty ||
@@ -342,7 +346,7 @@ struct ExpandedPanelView: View {
                 if !showingSettings {
                     VStack(alignment: .leading, spacing: 0) {
                         ZStack {
-                            if showingUsageDetail {
+                            if isShowingUsageDetail {
                                 usageDetailContent(geometry: geometry)
                                     .transition(primaryContentTransition)
                             } else if shouldShowSessionPicker {
@@ -355,7 +359,7 @@ struct ExpandedPanelView: View {
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
-                        if !showingUsageDetail {
+                        if !isShowingUsageDetail {
                             sharedUsageBar
                                 .padding(.horizontal, 12)
                                 .padding(.bottom, 5)
@@ -505,7 +509,12 @@ struct ExpandedPanelView: View {
                 isEnabled: state.isProviderSpecific ? Self.sharedUsageBarIsEnabled(provider: state.provider) : true,
                 onConnect: state.provider == .claude && state.isProviderSpecific ? { usageService.connectAndStartPolling() } : nil,
                 onRetry: state.provider == .claude && state.isProviderSpecific ? { usageService.retryNow() } : nil,
-                onOpenDetail: hasUsageDetailData ? { showingUsageDetail = true } : nil
+                onOpenDetail: hasUsageDetailData ? {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                        isActivityCollapsed = false
+                        showingUsageDetail = true
+                    }
+                } : nil
             )
         }
     }

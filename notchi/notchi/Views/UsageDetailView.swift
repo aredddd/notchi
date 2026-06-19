@@ -138,25 +138,15 @@ private struct UsageProgressBar: View {
     }
 }
 
-private struct StatusDot: View {
-    let color: Color
-    var body: some View {
-        Circle().fill(color).frame(width: 7, height: 7)
-    }
-}
-
 struct UsagePeriodRowView: View {
     let display: UsagePeriodDisplay
 
     var body: some View {
         let color = TerminalColors.usageColor(forPercentUsed: display.percentUsed)
         VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 6) {
-                Text(display.title)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(TerminalColors.primaryText)
-                StatusDot(color: color)
-            }
+            Text(display.title)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(TerminalColors.primaryText)
             UsageProgressBar(percentUsed: display.percentUsed, color: color)
             HStack {
                 Text("\(UsageMetrics.percentLeft(fromPercentUsed: display.percentUsed))% left")
@@ -178,12 +168,9 @@ struct ExtraUsageRowView: View {
     var body: some View {
         let color = TerminalColors.usageColor(forPercentUsed: display.percentUsed)
         VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 6) {
-                Text("Extra usage")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(TerminalColors.primaryText)
-                StatusDot(color: color)
-            }
+            Text("Extra usage")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(TerminalColors.primaryText)
             UsageProgressBar(percentUsed: display.percentUsed, color: color)
             HStack {
                 Text("\(Self.currency(display.usedCredits)) used")

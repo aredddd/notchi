@@ -337,7 +337,7 @@ struct NotchContentView: View {
 
     private var shouldShowBackButton: Bool {
         showingPanelSettings ||
-        showingUsageDetail ||
+        (showingUsageDetail && !isActivityCollapsed) ||
         (sessionStore.activeSessionCount >= 2 && showingSessionActivity)
     }
 
@@ -581,6 +581,7 @@ struct NotchContentView: View {
     }
 
     private func selectGrassSession(_ sessionId: String) {
+        showingUsageDetail = false
         guard sessionStore.activeSessionCount >= 2 else { return }
 
         let shouldPlayHaptic = sessionStore.selectedSessionId != sessionId || !showingSessionActivity
