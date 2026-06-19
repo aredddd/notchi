@@ -28,8 +28,8 @@ final class NotchiStateMachine {
         ClaudeUsageService.shared.handleClaudeResumeTrigger(trigger)
     }
     var isCodexProcessAlive: (Int) -> Bool
-    var clearCodexUsage: () -> Void = {
-        CodexUsageService.shared.clear()
+    var onCodexSessionsEnded: () -> Void = {
+        Task { await CodexUsageService.shared.refreshFromAPI() }
     }
 
     private static let syncDebounce: Duration = .milliseconds(100)
@@ -440,7 +440,7 @@ final class NotchiStateMachine {
             codexThreadMetadataRefreshTask = nil
             cancelCodexCompactionSignalRefresh()
             codexThreadMetadataImmediateRefreshKeys.removeAll()
-            clearCodexUsage()
+            onCodexSessionsEnded()
         }
     }
 
@@ -549,8 +549,8 @@ final class NotchiStateMachine {
             ClaudeUsageService.shared.handleClaudeResumeTrigger(trigger)
         }
         isCodexProcessAlive = Self.defaultCodexProcessAlive
-        clearCodexUsage = {
-            CodexUsageService.shared.clear()
+        onCodexSessionsEnded = {
+            Task { await CodexUsageService.shared.refreshFromAPI() }
         }
         codexProcessMonitorTask?.cancel()
         codexProcessMonitorTask = nil

@@ -90,6 +90,46 @@ final class CodexUsageAPITests: XCTestCase {
         XCTAssertEqual(CodexUsageAPI.usage(from: response, now: Date()).creditsBalance, 1250)
     }
 
+    func testUsageParsesSessionAndWeeklyFromRateLimit() throws {
+        let data = Data("""
+        {
+          "rate_limit": {
+            "primary_window": { "used_percent": 27.0, "reset_at": 1777103326 },
+            "secondary_window": { "used_percent": 9.0, "reset_at": 1777621726 }
+          }
+        }
+        """.utf8)
+        let response = try JSONDecoder().decode(CodexUsageAPIResponse.self, from: data)
+
+        let usage = CodexUsageAPI.usage(from: response, now: Date(timeIntervalSince1970: 1_000))
+
+        XCTAssertEqual(usage.session?.usagePercentage, 27)
+        XCTAssertEqual(usage.weekly?.usagePercentage, 9)
+    }
+
+    @MainActor
+    func testRefreshFromAPIPopulatesSessionWeeklyAndCredits() async throws {
+        let service = CodexUsageService(dependencies: CodexUsageServiceDependencies(
+            resolveUsage: { _ in nil },
+            fetchAPIUsage: {
+                CodexAPIUsage(
+                    session: QuotaPeriod(utilization: 40, resetDate: Date(timeIntervalSince1970: 9_999_999_999)),
+                    weekly: QuotaPeriod(utilization: 12, resetDate: Date(timeIntervalSince1970: 9_999_999_999)),
+                    reviews: nil,
+                    creditsBalance: 100
+                )
+            },
+            now: { Date(timeIntervalSince1970: 1_000) }
+        ))
+
+        await service.refreshFromAPI()
+
+        XCTAssertEqual(service.currentUsage?.usagePercentage, 40)
+        XCTAssertEqual(service.currentWeeklyUsage?.usagePercentage, 12)
+        let credits = try XCTUnwrap(service.currentExtraCreditsUSD)
+        XCTAssertEqual(credits, 100 * CodexUsageAPI.creditUSDRate, accuracy: 0.0001)
+    }
+
     func testUsageTreatsHasCreditsFalseAsZeroBalance() throws {
         let data = Data(#"{ "credits": { "has_credits": false } }"#.utf8)
         let response = try JSONDecoder().decode(CodexUsageAPIResponse.self, from: data)
@@ -160,6 +200,43 @@ final class CodexUsageAPITests: XCTestCase {
         XCTAssertEqual(service.currentReviewsUsage?.usagePercentage, 30)
         let retainedCredits = try XCTUnwrap(service.currentExtraCreditsUSD)
         XCTAssertEqual(retainedCredits, 100 * CodexUsageAPI.creditUSDRate, accuracy: 0.0001)
+    }
+
+    @MainActor
+    func testIdleRefreshAppliesCachedSessionWeeklyWhenThrottled() async {
+        let counter = CallCounter()
+        let now = Date(timeIntervalSince1970: 1_000)
+        let service = CodexUsageService(dependencies: CodexUsageServiceDependencies(
+            resolveUsage: { _ in
+                CodexUsageSnapshot(
+                    usage: QuotaPeriod(utilization: 5, resetDate: Date(timeIntervalSince1970: 9_999_999_999)),
+                    weeklyUsage: nil,
+                    observedAt: now
+                )
+            },
+            fetchAPIUsage: {
+                await counter.bump()
+                return CodexAPIUsage(
+                    session: QuotaPeriod(utilization: 73, resetDate: Date(timeIntervalSince1970: 9_999_999_999)),
+                    weekly: QuotaPeriod(utilization: 8, resetDate: Date(timeIntervalSince1970: 9_999_999_999)),
+                    reviews: nil,
+                    creditsBalance: nil
+                )
+            },
+            now: { now }
+        ))
+
+        // Active refresh: file drives session (5%), API fetched once (reviews/credits only).
+        await service.refresh(transcriptPaths: ["/tmp/rollout.jsonl"])
+        XCTAssertEqual(service.currentUsage?.usagePercentage, 5)
+
+        // Session ends within the throttle window: cached API session/weekly are applied without a new fetch.
+        await service.refreshFromAPI()
+
+        let fetchCount = await counter.count
+        XCTAssertEqual(fetchCount, 1)
+        XCTAssertEqual(service.currentUsage?.usagePercentage, 73)
+        XCTAssertEqual(service.currentWeeklyUsage?.usagePercentage, 8)
     }
 
     @MainActor

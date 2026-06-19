@@ -383,11 +383,17 @@ final class NotchiStateMachineTests: XCTestCase {
         XCTAssertNil(SessionStore.shared.session(for: sessionKey))
     }
 
-    func testLastCodexSessionEndClearsCodexUsage() {
+    func testLastCodexSessionEndTriggersCodexUsageRefresh() {
         let stateMachine = NotchiStateMachine.shared
         stateMachine.setCodexThreadMetadataAutoRefreshEnabledForTesting(false)
-        let sessionId = "codex-end-clear-usage-\(UUID().uuidString)"
-        let transcriptPath = "/tmp/codex-end-clear-usage.jsonl"
+        var endedHookCalls = 0
+        stateMachine.onCodexSessionsEnded = { endedHookCalls += 1 }
+        defer {
+            stateMachine.resetTestingHooks()
+            CodexUsageService.shared.clear()
+        }
+        let sessionId = "codex-end-refresh-usage-\(UUID().uuidString)"
+        let transcriptPath = "/tmp/codex-end-refresh-usage.jsonl"
 
         stateMachine.handleEvent(makeEvent(
             sessionId: sessionId,
@@ -402,7 +408,6 @@ final class NotchiStateMachineTests: XCTestCase {
             utilization: 15,
             resetDate: Date(timeIntervalSinceNow: 300)
         )
-        CodexUsageService.shared.lastObservedAt = Date()
 
         stateMachine.handleEvent(makeEvent(
             sessionId: sessionId,
@@ -412,8 +417,8 @@ final class NotchiStateMachineTests: XCTestCase {
             status: "ended"
         ))
 
-        XCTAssertNil(CodexUsageService.shared.currentUsage)
-        XCTAssertNil(CodexUsageService.shared.lastObservedAt)
+        XCTAssertGreaterThan(endedHookCalls, 0)
+        XCTAssertEqual(CodexUsageService.shared.currentUsage?.usagePercentage, 15)
     }
 
     private func makeInteractiveSession(sessionId: String) -> SessionData {
