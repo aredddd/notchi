@@ -145,12 +145,13 @@ final class NotchPanelManager {
         notchSize: CGSize,
         notchRect: CGRect,
         panelRect: CGRect = .zero,
-        systemNotchPath: CGPath? = nil
+        systemNotchPath: CGPath? = nil,
+        hasPhysicalNotch: Bool = false
     ) {
         self.notchSize = notchSize
         self.notchRect = notchRect
         self.panelRect = panelRect
-        hasPhysicalNotch = systemNotchPath != nil
+        self.hasPhysicalNotch = hasPhysicalNotch
         self.systemNotchPath = systemNotchPath
 
         compactNotchRect = Self.makeCompactNotchRect(notchSize: notchSize, notchRect: notchRect)
