@@ -692,6 +692,7 @@ final class ClaudeUsageService {
     var statusMessage: String?
     var isConnected = false
     var isUsageStale = false
+    var isUsingHeadersFallback: Bool { isHeadersFallbackActive }
     var lastObservedAt: Date?
     var recoveryAction: ClaudeUsageRecoveryAction = .none
 
@@ -1366,8 +1367,6 @@ final class ClaudeUsageService {
             let usage = QuotaPeriod(utilization: (utilization * 100).rounded(), resetDate: resetDate)
             isConnected = true
             currentUsage = usage
-            currentWeeklyUsage = nil
-            currentSonnetUsage = nil
             lastObservedAt = dependencies.now()
             reconcileExtraUsageStateForHeaders(using: usage)
 

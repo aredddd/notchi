@@ -22,6 +22,7 @@ struct UsageDetailView: View {
         UsageMetrics.claudeHasData(
             usage: claudeUsage.currentUsage,
             weeklyUsage: claudeUsage.currentWeeklyUsage,
+            sonnetUsage: claudeUsage.currentSonnetUsage,
             extraUsage: claudeUsage.currentExtraUsage
         )
     }
@@ -48,16 +49,19 @@ struct UsageDetailView: View {
     private var periods: [UsagePeriodDisplay] {
         switch resolvedProvider {
         case .claude:
+            let stale = claudeUsage.isUsageStale
+            let heldOver = stale || claudeUsage.isUsingHeadersFallback
             return [
-                UsageMetrics.periodDisplay(title: "Session", usage: claudeUsage.currentUsage),
-                UsageMetrics.periodDisplay(title: "Weekly", usage: claudeUsage.currentWeeklyUsage),
-                UsageMetrics.periodDisplay(title: "Sonnet", usage: claudeUsage.currentSonnetUsage),
+                UsageMetrics.periodDisplay(title: "Session", usage: claudeUsage.currentUsage, isStale: stale),
+                UsageMetrics.periodDisplay(title: "Weekly", usage: claudeUsage.currentWeeklyUsage, isStale: heldOver),
+                UsageMetrics.periodDisplay(title: "Sonnet", usage: claudeUsage.currentSonnetUsage, isStale: heldOver),
             ].compactMap { $0 }
         case .codex:
+            let stale = codexUsage.isUsageStale
             return [
-                UsageMetrics.periodDisplay(title: "Session", usage: codexUsage.currentUsage),
-                UsageMetrics.periodDisplay(title: "Weekly", usage: codexUsage.currentWeeklyUsage),
-                UsageMetrics.periodDisplay(title: "Reviews", usage: codexUsage.currentReviewsUsage),
+                UsageMetrics.periodDisplay(title: "Session", usage: codexUsage.currentUsage, isStale: stale),
+                UsageMetrics.periodDisplay(title: "Weekly", usage: codexUsage.currentWeeklyUsage, isStale: stale),
+                UsageMetrics.periodDisplay(title: "Reviews", usage: codexUsage.currentReviewsUsage, isStale: stale),
             ].compactMap { $0 }
         }
     }
@@ -152,22 +156,29 @@ struct UsagePeriodRowView: View {
     let display: UsagePeriodDisplay
 
     var body: some View {
-        let color = TerminalColors.usageColor(forPercentUsed: display.percentUsed)
+        let color = display.isStale
+            ? TerminalColors.dimmedText
+            : TerminalColors.usageColor(forPercentUsed: display.percentUsed)
         VStack(alignment: .leading, spacing: 7) {
-            Text(display.title)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(TerminalColors.primaryText)
-            UsageProgressBar(percentUsed: display.percentUsed, color: color)
-            HStack {
-                Text("\(UsageMetrics.percentLeft(fromPercentUsed: display.percentUsed))% left")
-                    .foregroundColor(TerminalColors.secondaryText)
-                Spacer()
-                if let resetText = display.resetText {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(display.title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(TerminalColors.primaryText)
+                if display.isStale {
+                    Text("stale data")
+                        .font(.system(size: 11))
+                        .foregroundColor(TerminalColors.secondaryText)
+                } else if let resetText = display.resetText {
                     Text(resetText)
+                        .font(.system(size: 11))
                         .foregroundColor(TerminalColors.secondaryText)
                 }
+                Spacer()
+                Text("\(display.percentUsed)%")
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundColor(color)
             }
-            .font(.system(size: 11))
+            UsageProgressBar(percentUsed: display.percentUsed, color: color)
         }
     }
 }

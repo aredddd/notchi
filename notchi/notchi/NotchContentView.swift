@@ -1,4 +1,5 @@
 import SwiftUI
+import OSLog
 
 enum NotchConstants {
     static let expandedPanelSize = CGSize(width: 450, height: 450)
@@ -301,7 +302,6 @@ struct NotchContentView: View {
 
     private var usageRingPercentage: Int? {
         guard AppSettings.isUsageEnabled,
-              sessionStore.activeSessionCount > 0,
               let usage = usageService.currentUsage else { return nil }
         return usage.usagePercentage
     }
@@ -623,8 +623,21 @@ struct NotchContentView: View {
         }
     }
 
+    private static let ringDebugLogger = Logger(subsystem: "com.ruban.notchi", category: "ring-debug")
+    private static var lastRingDebugLine: String?
+
+    private func logRingState(side: NotchSide) {
+        guard side == .left else { return }
+        let hidden = usageRingPercentage == nil || isLaunchWaveActive
+        let line = "hidden=\(hidden) pct=\(String(describing: usageRingPercentage)) launchWave=\(isLaunchWaveActive) enabled=\(AppSettings.isUsageEnabled) sessions=\(sessionStore.activeSessionCount) claudeUsage=\(usageService.currentUsage != nil) stale=\(usageService.isUsageStale) connected=\(usageService.isConnected) fallback=\(usageService.isUsingHeadersFallback)"
+        guard line != Self.lastRingDebugLine else { return }
+        Self.lastRingDebugLine = line
+        Self.ringDebugLogger.error("RING-DEBUG \(line, privacy: .public)")
+    }
+
     @ViewBuilder
     private func ringSlot(side: NotchSide) -> some View {
+        let _ = logRingState(side: side)
         if let usageRingPercentage, !isLaunchWaveActive {
             UsageRingView(percentage: usageRingPercentage, isStale: usageService.isUsageStale)
                 .opacity(collapsedHeaderSpriteVisuals.opacity)
