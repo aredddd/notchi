@@ -78,25 +78,24 @@ struct CostDashboardView: View {
     }
 
     @ViewBuilder private func statsRow(_ r: DailyCostReport) -> some View {
-        HStack(alignment: .top, spacing: 16) {
+        HStack(alignment: .top, spacing: 12) {
             stat("Today", CostStatFormatter.usd(r.todayCostUSD))
             stat("30d cost", CostStatFormatter.usd(r.windowCostUSD))
             stat("30d tokens", CostStatFormatter.tokens(r.windowTokens))
             stat("Latest tokens", CostStatFormatter.tokens(r.latestTokens))
             stat("Top model", r.topModel.map(CostStatFormatter.modelName) ?? "—")
-            Spacer(minLength: 0)
         }
     }
 
     private func stat(_ title: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title).font(.caption2).foregroundStyle(TerminalColors.dimmedText)
-                .lineLimit(1)
+                .lineLimit(1).minimumScaleFactor(0.7)
             Text(value).font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(TerminalColors.primaryText)
-                .lineLimit(1)
+                .lineLimit(1).minimumScaleFactor(0.7)
         }
-        .fixedSize(horizontal: true, vertical: false)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder private func hoverDetail(_ r: DailyCostReport) -> some View {
