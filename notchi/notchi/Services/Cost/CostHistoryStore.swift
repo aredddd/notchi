@@ -13,17 +13,19 @@ final class CostHistoryStore {
     private let scanProvider: @Sendable (Date) async -> DayModelBuckets
     private var timer: Timer?
     private let refreshInterval: TimeInterval = 90
+    private let pricingCatalog: PricingCatalog?
 
     init(windowDays: Int = 30, calendar: Calendar = .current,
          scanProvider: @escaping @Sendable (Date) async -> DayModelBuckets) {
         self.windowDays = windowDays
         self.calendar = calendar
         self.scanProvider = scanProvider
+        self.pricingCatalog = nil
     }
 
     /// Production initializer — builds scanProvider from real scanner + cache.
     convenience init(windowDays: Int = 30, calendar: Calendar = .current,
-                     pricing: any ClaudePricingProviding,
+                     pricing: PricingCatalog,
                      projectsRoots: [URL],
                      cacheURL: URL) {
         // Construct scanner once; closure captures it and calls scan() serially (one at a time via isScanning guard).
@@ -33,7 +35,7 @@ final class CostHistoryStore {
             windowDays: windowDays,
             calendar: calendar)
 
-        self.init(windowDays: windowDays, calendar: calendar) { now in
+        self.init(windowDays: windowDays, calendar: calendar, pricingCatalog: pricing) { now in
             await Task.detached(priority: .utility) {
                 let cache = CostUsageCacheStore.load(url: cacheURL)
                 let updated = scanner.scan(cache: cache, now: now)
@@ -43,7 +45,19 @@ final class CostHistoryStore {
         }
     }
 
+    private init(windowDays: Int, calendar: Calendar, pricingCatalog: PricingCatalog,
+                 scanProvider: @escaping @Sendable (Date) async -> DayModelBuckets) {
+        self.windowDays = windowDays
+        self.calendar = calendar
+        self.scanProvider = scanProvider
+        self.pricingCatalog = pricingCatalog
+    }
+
     func start() {
+        guard timer == nil else { return }
+        if let catalog = pricingCatalog {
+            Task.detached(priority: .utility) { await catalog.refreshFromNetwork() }
+        }
         Task { await refresh() }
         timer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.refresh() }
@@ -64,4 +78,22 @@ final class CostHistoryStore {
         lastScan = now
         isScanning = false
     }
+}
+
+// MARK: - Shared singleton
+
+extension CostHistoryStore {
+    static let shared: CostHistoryStore = {
+        let pricing = PricingCatalog(fallbackBundle: .main)
+        let projectsRoot = URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent(".claude/projects", isDirectory: true)
+        let cacheURL: URL
+        if let cachesDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first {
+            cacheURL = cachesDir.appendingPathComponent("CostUsage/claude.json")
+        } else {
+            cacheURL = URL(fileURLWithPath: NSHomeDirectory())
+                .appendingPathComponent(".notchi/CostUsage/claude.json")
+        }
+        return CostHistoryStore(pricing: pricing, projectsRoots: [projectsRoot], cacheURL: cacheURL)
+    }()
 }

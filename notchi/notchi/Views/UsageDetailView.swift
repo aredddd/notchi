@@ -3,6 +3,7 @@ import SwiftUI
 struct UsageDetailView: View {
     let claudeUsage: ClaudeUsageService
     let codexUsage: CodexUsageService
+    let costStore: CostHistoryStore
     let defaultProvider: AgentProvider
 
     @State private var selectedProvider: AgentProvider
@@ -10,10 +11,12 @@ struct UsageDetailView: View {
     init(
         claudeUsage: ClaudeUsageService,
         codexUsage: CodexUsageService,
+        costStore: CostHistoryStore = .shared,
         defaultProvider: AgentProvider
     ) {
         self.claudeUsage = claudeUsage
         self.codexUsage = codexUsage
+        self.costStore = costStore
         self.defaultProvider = defaultProvider
         _selectedProvider = State(initialValue: defaultProvider)
     }
@@ -90,6 +93,17 @@ struct UsageDetailView: View {
 
             if let codexCreditsUSD {
                 CodexCreditsRowView(remainingUSD: codexCreditsUSD)
+            }
+
+            Divider().background(Color.white.opacity(0.08))
+
+            switch resolvedProvider {
+            case .claude:
+                CostDashboardView(store: costStore)
+            case .codex:
+                Text("Cost history coming soon")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .padding(.top, 8)
