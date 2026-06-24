@@ -49,4 +49,16 @@ final class ClaudeModelPricingTests: XCTestCase {
         let expected: Double = inputCost + readCost + writeCost + outputCost
         XCTAssertEqual(cost!, expected, accuracy: 1e-9)
     }
+
+    func testCatalogFallsBackToEmbeddedSnapshotForKnownModel() {
+        let catalog = PricingCatalog(fallbackBundle: .main)
+        let p = catalog.pricing(model: "claude-sonnet-4", on: Date())
+        XCTAssertNotNil(p, "embedded fallback must price the current Sonnet model")
+        XCTAssertGreaterThan(p!.outputPerToken, p!.inputPerToken)
+    }
+
+    func testCatalogReturnsNilForUnknownModel() {
+        let catalog = PricingCatalog(fallbackBundle: .main)
+        XCTAssertNil(catalog.pricing(model: "totally-made-up-model", on: Date()))
+    }
 }
