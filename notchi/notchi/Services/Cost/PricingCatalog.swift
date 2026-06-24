@@ -178,9 +178,11 @@ nonisolated final class PricingCatalog: ClaudePricingProviding, @unchecked Senda
         let sorted = table.sorted(by: { $0.key < $1.key })
         lock.unlock()
 
+        let fmt: (Double) -> String = { String(format: "%.12g", $0) }
+        let fmtOpt: (Double?) -> String = { $0.map { String(format: "%.12g", $0) } ?? "-" }
         var buffer = ""
         for (key, p) in sorted {
-            buffer += "\(key):\(p.inputPerToken):\(p.outputPerToken):\(p.cacheCreationPerToken):\(p.cacheReadPerToken):\(p.thresholdTokens ?? -1):\(p.inputPerTokenAboveThreshold ?? -1):\(p.outputPerTokenAboveThreshold ?? -1):\(p.cacheCreationPerTokenAboveThreshold ?? -1):\(p.cacheReadPerTokenAboveThreshold ?? -1)"
+            buffer += "\(key):\(fmt(p.inputPerToken)):\(fmt(p.outputPerToken)):\(fmt(p.cacheCreationPerToken)):\(fmt(p.cacheReadPerToken)):\(p.thresholdTokens ?? -1):\(fmtOpt(p.inputPerTokenAboveThreshold)):\(fmtOpt(p.outputPerTokenAboveThreshold)):\(fmtOpt(p.cacheCreationPerTokenAboveThreshold)):\(fmtOpt(p.cacheReadPerTokenAboveThreshold))"
         }
         let fnvOffsetBasis: UInt64 = 0xcbf2_9ce4_8422_2325
         let fnvPrime: UInt64 = 0x0000_0100_0000_01b3

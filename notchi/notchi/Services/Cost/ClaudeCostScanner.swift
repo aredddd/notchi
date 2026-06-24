@@ -20,6 +20,10 @@ final class ClaudeCostScanner {
     nonisolated func scan(cache input: CostUsageCache, now: Date) -> CostUsageCache {
         seen.removeAll()
         var cache = input
+        if anyTrackedFileShrank(cache.files) {
+            cache.files = [:]
+            cache.buckets = [:]
+        }
         let windowStart = calendar.date(byAdding: .day, value: -(windowDays - 1),
                                         to: calendar.startOfDay(for: now))!
         let sinceKey = DailyCostReport.dayKey(windowStart, calendar: calendar)
@@ -44,6 +48,14 @@ final class ClaudeCostScanner {
         }
         cache.buckets = cache.buckets.filter { $0.key >= sinceKey }
         return cache
+    }
+
+    nonisolated private func anyTrackedFileShrank(_ files: [String: CostUsageCache.FileState]) -> Bool {
+        for (path, state) in files {
+            let size = ((try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? NSNumber)?.int64Value ?? 0
+            if size < state.size { return true }
+        }
+        return false
     }
 
     nonisolated private func parseFile(url: URL, startOffset: Int64, sinceKey: String,

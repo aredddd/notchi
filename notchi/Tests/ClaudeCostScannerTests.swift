@@ -64,4 +64,22 @@ final class ClaudeCostScannerTests: XCTestCase {
         XCTAssertEqual(second.buckets["2026-06-24"]?["claude-opus-4"]?.input, 150)
         XCTAssertEqual(second.buckets["2026-06-24"]?["claude-opus-4"]?.requestCount, 2)
     }
+
+    func testTruncatedFileFullyRescansWithoutDoubleCounting() throws {
+        let url = try writeFile([
+            line(msgId: "m1", reqId: "r1", input: 100, output: 0),
+            line(msgId: "m2", reqId: "r2", input: 50, output: 0),
+        ])
+        let root = url.deletingLastPathComponent().deletingLastPathComponent()
+        let s = scanner(root: root)
+        let now = ISO8601DateFormatter().date(from: "2026-06-24T12:00:00Z")!
+        let first = s.scan(cache: CostUsageCache(version: CostUsageCache.currentVersion, files: [:], buckets: [:]), now: now)
+        XCTAssertEqual(first.buckets["2026-06-24"]?["claude-opus-4"]?.input, 150)
+
+        try (line(msgId: "m1", reqId: "r1", input: 100, output: 0) + "\n").data(using: .utf8)!.write(to: url)
+        let second = s.scan(cache: first, now: now)
+        XCTAssertEqual(second.buckets["2026-06-24"]?["claude-opus-4"]?.input, 100,
+                       "truncated file must trigger a clean full rescan, not double-count")
+        XCTAssertEqual(second.buckets["2026-06-24"]?["claude-opus-4"]?.requestCount, 1)
+    }
 }

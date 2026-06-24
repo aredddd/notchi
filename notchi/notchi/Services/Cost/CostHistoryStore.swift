@@ -67,6 +67,7 @@ final class CostHistoryStore {
     func refresh() async {
         if isScanning { return }
         isScanning = true
+        defer { isScanning = false }
         let now = Date()
         let buckets = await scanProvider(now)
         let windowStart = calendar.date(byAdding: .day, value: -(windowDays - 1),
@@ -76,7 +77,6 @@ final class CostHistoryStore {
             window: DateInterval(start: windowStart, end: now),
             today: now, calendar: calendar)
         lastScan = now
-        isScanning = false
     }
 }
 

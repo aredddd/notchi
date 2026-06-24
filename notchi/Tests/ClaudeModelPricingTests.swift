@@ -90,6 +90,22 @@ final class ClaudeModelPricingTests: XCTestCase {
         XCTAssertNotEqual(cat1.signature(), cat2.signature())
     }
 
+    func testSignatureToleratesSubUlpFloatDifferences() {
+        func mk(_ v: Double) -> ClaudeModelPricing {
+            ClaudeModelPricing(inputPerToken: v, outputPerToken: 0.000025,
+                cacheCreationPerToken: 0.00000625, cacheReadPerToken: 0.0000005,
+                cacheCreation1hPerToken: nil, thresholdTokens: nil,
+                inputPerTokenAboveThreshold: nil, outputPerTokenAboveThreshold: nil,
+                cacheCreationPerTokenAboveThreshold: nil, cacheReadPerTokenAboveThreshold: nil)
+        }
+        let base = 5e-6
+        let nudged = base.nextUp.nextUp
+        XCTAssertNotEqual(base, nudged)
+        let a = PricingCatalog(table: ["claude-opus-4-8": mk(base)]).signature()
+        let b = PricingCatalog(table: ["claude-opus-4-8": mk(nudged)]).signature()
+        XCTAssertEqual(a, b, "sub-12-sig-fig float differences must not change the signature")
+    }
+
     // MARK: - T3: disk snapshot round-trips and overlays fallback
 
     func testSnapshotPersistsAndOverlaysFallback() throws {
