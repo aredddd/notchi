@@ -4,15 +4,19 @@ import XCTest
 final class UsageDisplayTests: XCTestCase {
     private let futureReset = Date(timeIntervalSince1970: 4_102_444_800)
 
-    func testPercentLeftIsComplementOfUsed() {
-        XCTAssertEqual(UsageMetrics.percentLeft(fromPercentUsed: 42), 58)
-        XCTAssertEqual(UsageMetrics.percentLeft(fromPercentUsed: 0), 100)
-        XCTAssertEqual(UsageMetrics.percentLeft(fromPercentUsed: 100), 0)
+    func testFormattedResetTimeUsesMinutesUnderAnHour() {
+        let usage = QuotaPeriod(utilization: 10, resetDate: Date(timeIntervalSinceNow: 30 * 60 + 30))
+        XCTAssertEqual(usage.formattedResetTime, "30m")
     }
 
-    func testPercentLeftClampsBeyondBounds() {
-        XCTAssertEqual(UsageMetrics.percentLeft(fromPercentUsed: 125), 0)
-        XCTAssertEqual(UsageMetrics.percentLeft(fromPercentUsed: -10), 100)
+    func testFormattedResetTimeUsesHoursAndMinutesUnder48Hours() {
+        let usage = QuotaPeriod(utilization: 10, resetDate: Date(timeIntervalSinceNow: 5 * 3600 + 30 * 60 + 30))
+        XCTAssertEqual(usage.formattedResetTime, "5h 30m")
+    }
+
+    func testFormattedResetTimeUsesDaysAndHoursAtOrAbove48Hours() {
+        let usage = QuotaPeriod(utilization: 10, resetDate: Date(timeIntervalSinceNow: 50 * 3600 + 5 * 60))
+        XCTAssertEqual(usage.formattedResetTime, "2d 2h")
     }
 
     func testPeriodDisplayReturnsNilWhenNoUsage() {
@@ -26,7 +30,7 @@ final class UsageDisplayTests: XCTestCase {
 
         XCTAssertEqual(display?.title, "Weekly")
         XCTAssertEqual(display?.percentUsed, 58)
-        XCTAssertEqual(display?.resetText?.hasPrefix("Resets in "), true)
+        XCTAssertEqual(display?.resetText?.hasPrefix("resets in "), true)
     }
 
     func testPeriodDisplayOmitsResetTextWhenExpired() {
@@ -42,6 +46,13 @@ final class UsageDisplayTests: XCTestCase {
         let usage = QuotaPeriod(utilization: 137, resetDate: futureReset)
 
         XCTAssertEqual(UsageMetrics.periodDisplay(title: "Session", usage: usage)?.percentUsed, 100)
+    }
+
+    func testPeriodDisplayDefaultsToFreshAndCarriesStaleFlag() {
+        let usage = QuotaPeriod(utilization: 20, resetDate: futureReset)
+
+        XCTAssertEqual(UsageMetrics.periodDisplay(title: "Weekly", usage: usage)?.isStale, false)
+        XCTAssertEqual(UsageMetrics.periodDisplay(title: "Weekly", usage: usage, isStale: true)?.isStale, true)
     }
 
     func testExtraUsageDisplayReturnsNilWhenDisabled() {
@@ -68,14 +79,19 @@ final class UsageDisplayTests: XCTestCase {
         let usage = QuotaPeriod(utilization: 10, resetDate: futureReset)
         let extra = ExtraUsage(isEnabled: true, monthlyLimit: 20, usedCredits: 5, utilization: nil)
 
-        XCTAssertTrue(UsageMetrics.claudeHasData(usage: usage, weeklyUsage: nil, extraUsage: nil))
-        XCTAssertTrue(UsageMetrics.claudeHasData(usage: nil, weeklyUsage: usage, extraUsage: nil))
-        XCTAssertTrue(UsageMetrics.claudeHasData(usage: nil, weeklyUsage: nil, extraUsage: extra))
+        XCTAssertTrue(UsageMetrics.claudeHasData(usage: usage, weeklyUsage: nil, sonnetUsage: nil, extraUsage: nil))
+        XCTAssertTrue(UsageMetrics.claudeHasData(usage: nil, weeklyUsage: usage, sonnetUsage: nil, extraUsage: nil))
+        XCTAssertTrue(UsageMetrics.claudeHasData(usage: nil, weeklyUsage: nil, sonnetUsage: nil, extraUsage: extra))
+    }
+
+    func testClaudeHasDataTrueForSonnetOnlyData() {
+        let sonnet = QuotaPeriod(utilization: 0, resetDate: nil)
+        XCTAssertTrue(UsageMetrics.claudeHasData(usage: nil, weeklyUsage: nil, sonnetUsage: sonnet, extraUsage: nil))
     }
 
     func testClaudeHasDataFalseWhenNoUsableData() {
         let disabledExtra = ExtraUsage(isEnabled: false, monthlyLimit: 20, usedCredits: 5, utilization: nil)
-        XCTAssertFalse(UsageMetrics.claudeHasData(usage: nil, weeklyUsage: nil, extraUsage: disabledExtra))
+        XCTAssertFalse(UsageMetrics.claudeHasData(usage: nil, weeklyUsage: nil, sonnetUsage: nil, extraUsage: disabledExtra))
     }
 
     func testCodexHasDataReflectsPeriodPresence() {

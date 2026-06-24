@@ -3,6 +3,44 @@ import XCTest
 @testable import notchi
 
 extension ClaudeUsageServiceTests {
+    func testReconnectStateSchedulesSelfHealRetryThatResumesPolling() async throws {
+        let scheduler = PollSchedulerSpy()
+        var credentialsAvailable = false
+        var serveSuccess = false
+        let dependencies = makeDependencies(
+            scheduler: scheduler,
+            resolveUserAgent: { "claude-code/2.1.77" },
+            getCachedOAuthToken: { _ in nil },
+            getOAuthCredentials: { _ in
+                credentialsAvailable
+                    ? self.makeCredentials(accessToken: "fresh-token", scopes: ["user:profile"])
+                    : nil
+            },
+            fetchUsage: { _ in
+                serveSuccess
+                    ? (self.makeSuccessPayload(utilization: 30), self.makeResponse(statusCode: 200))
+                    : (Data(), self.makeResponse(statusCode: 401))
+            }
+        )
+
+        let service = ClaudeUsageService(dependencies: dependencies)
+        AppSettings.isUsageEnabled = true
+        service.currentUsage = makeQuotaPeriod(utilization: 18)
+
+        await service.performFetch(with: "old-token", consultCredentialMetadata: false)
+
+        XCTAssertEqual(service.recoveryAction, .reconnect)
+        XCTAssertTrue(scheduler.intervals.contains(300))
+
+        credentialsAvailable = true
+        serveSuccess = true
+        scheduler.fireLast()
+        for _ in 0..<6 { await Task.yield() }
+
+        XCTAssertEqual(service.currentUsage?.usagePercentage, 30)
+        XCTAssertEqual(service.recoveryAction, .none)
+    }
+
     func testConnectAndStartPollingUsesSilentStoredTokenRecovery() async throws {
         let scheduler = PollSchedulerSpy()
         var environmentTokenCalls = 0

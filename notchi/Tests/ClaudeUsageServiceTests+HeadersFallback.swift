@@ -329,7 +329,7 @@ extension ClaudeUsageServiceTests {
 
         XCTAssertEqual(requestURLs, ["/v1/messages"])
         XCTAssertNil(service.error)
-        XCTAssertEqual(service.statusMessage, "Updating soon")
+        XCTAssertEqual(service.statusMessage, "Stale data")
         XCTAssertTrue(service.isUsageStale)
         XCTAssertEqual(service.recoveryAction, .retry)
         XCTAssertEqual(service.currentUsage?.usagePercentage, 50)

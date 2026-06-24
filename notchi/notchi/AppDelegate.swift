@@ -62,6 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate, SP
                 NotchiStateMachine.shared.handleEvent(event)
             }
             await ClaudeUsageService.shared.startPolling()
+            await CodexUsageService.shared.refreshFromAPI()
         }
     }
 
@@ -157,6 +158,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate, SP
     @objc private func handleSystemWake() {
         MainActor.assumeIsolated {
             ClaudeUsageService.shared.startPolling(afterSystemWake: true)
+            Task { await CodexUsageService.shared.refreshFromAPI() }
         }
     }
 

@@ -4,6 +4,7 @@ nonisolated struct UsagePeriodDisplay: Equatable {
     let title: String
     let percentUsed: Int
     let resetText: String?
+    var isStale: Bool = false
 }
 
 nonisolated struct ExtraUsageDisplay: Equatable {
@@ -17,25 +18,19 @@ nonisolated struct ExtraUsageDisplay: Equatable {
 }
 
 nonisolated enum UsageMetrics {
-    static func percentLeft(fromPercentUsed percentUsed: Int) -> Int {
-        min(max(100 - percentUsed, 0), 100)
-    }
-
-    /// Builds a row from a quota period. Returns nil when there is no usage data
-    /// at all; an expired or reset-less period still renders, just without the
-    /// trailing reset segment.
-    static func periodDisplay(title: String, usage: QuotaPeriod?) -> UsagePeriodDisplay? {
+    static func periodDisplay(title: String, usage: QuotaPeriod?, isStale: Bool = false) -> UsagePeriodDisplay? {
         guard let usage else { return nil }
-        let resetText = usage.formattedResetTime.map { "Resets in \($0)" }
+        let resetText = usage.formattedResetTime.map { "resets in \($0)" }
         return UsagePeriodDisplay(
             title: title,
             percentUsed: min(max(usage.usagePercentage, 0), 100),
-            resetText: resetText
+            resetText: resetText,
+            isStale: isStale
         )
     }
 
-    static func claudeHasData(usage: QuotaPeriod?, weeklyUsage: QuotaPeriod?, extraUsage: ExtraUsage?) -> Bool {
-        usage != nil || weeklyUsage != nil || extraUsageDisplay(extraUsage) != nil
+    static func claudeHasData(usage: QuotaPeriod?, weeklyUsage: QuotaPeriod?, sonnetUsage: QuotaPeriod?, extraUsage: ExtraUsage?) -> Bool {
+        usage != nil || weeklyUsage != nil || sonnetUsage != nil || extraUsageDisplay(extraUsage) != nil
     }
 
     static func codexHasData(usage: QuotaPeriod?, weeklyUsage: QuotaPeriod?) -> Bool {

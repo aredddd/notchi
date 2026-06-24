@@ -27,8 +27,10 @@ nonisolated struct CodexAPIAuth: Equatable {
 }
 
 nonisolated struct CodexAPIUsage: Equatable {
-    let reviews: QuotaPeriod?
-    let creditsBalance: Double?
+    var session: QuotaPeriod? = nil
+    var weekly: QuotaPeriod? = nil
+    var reviews: QuotaPeriod? = nil
+    var creditsBalance: Double? = nil
 }
 
 nonisolated enum CodexUsageAPI {
@@ -70,12 +72,9 @@ nonisolated enum CodexUsageAPI {
     }
 
     static func usage(from response: CodexUsageAPIResponse, now: Date) -> CodexAPIUsage {
-        let reviews = response.codeReviewRateLimit?.primaryWindow.flatMap { window -> QuotaPeriod? in
-            guard let usedPercent = window.usedPercent else { return nil }
-            return QuotaPeriod(
-                utilization: usedPercent.rounded(),
-                resetDate: window.resetDate(now: now)
-            )
+        func period(_ window: CodexUsageAPIResponse.Window?) -> QuotaPeriod? {
+            guard let window, let usedPercent = window.usedPercent else { return nil }
+            return QuotaPeriod(utilization: usedPercent.rounded(), resetDate: window.resetDate(now: now))
         }
 
         let creditsBalance: Double?
@@ -87,7 +86,12 @@ nonisolated enum CodexUsageAPI {
             creditsBalance = nil
         }
 
-        return CodexAPIUsage(reviews: reviews, creditsBalance: creditsBalance)
+        return CodexAPIUsage(
+            session: period(response.rateLimit?.primaryWindow),
+            weekly: period(response.rateLimit?.secondaryWindow),
+            reviews: period(response.codeReviewRateLimit?.primaryWindow),
+            creditsBalance: creditsBalance
+        )
     }
 
     private static func base64URLDecode(_ value: String) -> Data? {
@@ -102,18 +106,22 @@ nonisolated enum CodexUsageAPI {
 }
 
 nonisolated struct CodexUsageAPIResponse: Decodable {
+    let rateLimit: RateLimit?
     let codeReviewRateLimit: RateLimit?
     let credits: Credits?
 
     enum CodingKeys: String, CodingKey {
+        case rateLimit = "rate_limit"
         case codeReviewRateLimit = "code_review_rate_limit"
         case credits
     }
 
     struct RateLimit: Decodable {
         let primaryWindow: Window?
+        let secondaryWindow: Window?
         enum CodingKeys: String, CodingKey {
             case primaryWindow = "primary_window"
+            case secondaryWindow = "secondary_window"
         }
     }
 

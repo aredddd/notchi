@@ -57,6 +57,7 @@ final class CodexUsageService {
 
     private static let apiUsageRefreshInterval: TimeInterval = 60
     private var lastAPIUsageFetchAt: Date?
+    private var lastFetchedAPIUsage: CodexAPIUsage?
 
     private let dependencies: CodexUsageServiceDependencies
 
@@ -77,19 +78,35 @@ final class CodexUsageService {
         }.value
 
         apply(snapshot)
-        await refreshAPIUsage()
+        await fetchAndApplyAPIUsage(includeSessionWeekly: false)
     }
 
-    private func refreshAPIUsage() async {
-        let now = dependencies.now()
-        if let last = lastAPIUsageFetchAt, now.timeIntervalSince(last) < Self.apiUsageRefreshInterval {
-            return
-        }
-        lastAPIUsageFetchAt = now
+    func refreshFromAPI() async {
+        await fetchAndApplyAPIUsage(includeSessionWeekly: true)
+    }
 
-        if let apiUsage = await dependencies.fetchAPIUsage() {
-            currentReviewsUsage = apiUsage.reviews
-            currentExtraCreditsUSD = apiUsage.creditsBalance.map { $0 * CodexUsageAPI.creditUSDRate }
+    private func fetchAndApplyAPIUsage(includeSessionWeekly: Bool) async {
+        let now = dependencies.now()
+        let apiUsage: CodexAPIUsage?
+        if let last = lastAPIUsageFetchAt, now.timeIntervalSince(last) < Self.apiUsageRefreshInterval {
+            apiUsage = lastFetchedAPIUsage
+        } else {
+            lastAPIUsageFetchAt = now
+            let fetched = await dependencies.fetchAPIUsage()
+            if fetched != nil { lastFetchedAPIUsage = fetched }
+            apiUsage = fetched
+        }
+
+        guard let apiUsage else { return }
+        currentReviewsUsage = apiUsage.reviews
+        currentExtraCreditsUSD = apiUsage.creditsBalance.map { $0 * CodexUsageAPI.creditUSDRate }
+
+        if includeSessionWeekly, let session = apiUsage.session {
+            currentUsage = session
+            currentWeeklyUsage = apiUsage.weekly
+            lastObservedAt = now
+            isUsageStale = false
+            statusMessage = nil
         }
     }
 
@@ -99,6 +116,7 @@ final class CodexUsageService {
         currentReviewsUsage = nil
         currentExtraCreditsUSD = nil
         lastAPIUsageFetchAt = nil
+        lastFetchedAPIUsage = nil
         isUsageStale = false
         statusMessage = nil
         lastObservedAt = nil
