@@ -4,6 +4,21 @@ import XCTest
 final class UsageDisplayTests: XCTestCase {
     private let futureReset = Date(timeIntervalSince1970: 4_102_444_800)
 
+    func testFormattedResetTimeUsesMinutesUnderAnHour() {
+        let usage = QuotaPeriod(utilization: 10, resetDate: Date(timeIntervalSinceNow: 30 * 60 + 30))
+        XCTAssertEqual(usage.formattedResetTime, "30m")
+    }
+
+    func testFormattedResetTimeUsesHoursAndMinutesUnder48Hours() {
+        let usage = QuotaPeriod(utilization: 10, resetDate: Date(timeIntervalSinceNow: 5 * 3600 + 30 * 60 + 30))
+        XCTAssertEqual(usage.formattedResetTime, "5h 30m")
+    }
+
+    func testFormattedResetTimeUsesDaysAndHoursAtOrAbove48Hours() {
+        let usage = QuotaPeriod(utilization: 10, resetDate: Date(timeIntervalSinceNow: 50 * 3600 + 5 * 60))
+        XCTAssertEqual(usage.formattedResetTime, "2d 2h")
+    }
+
     func testPeriodDisplayReturnsNilWhenNoUsage() {
         XCTAssertNil(UsageMetrics.periodDisplay(title: "Session", usage: nil))
     }
