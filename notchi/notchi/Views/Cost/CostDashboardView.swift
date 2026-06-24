@@ -5,6 +5,7 @@ enum CostStatFormatter {
     private static let usdFormatter: NumberFormatter = {
         let f = NumberFormatter()
         f.numberStyle = .currency
+        f.locale = Locale(identifier: "en_US")
         f.currencyCode = "USD"
         f.currencySymbol = "$"
         f.usesGroupingSeparator = true
