@@ -11,7 +11,7 @@ struct UsageDetailView: View {
     init(
         claudeUsage: ClaudeUsageService,
         codexUsage: CodexUsageService,
-        costStore: CostHistoryStore = .shared,
+        costStore: CostHistoryStore,
         defaultProvider: AgentProvider
     ) {
         self.claudeUsage = claudeUsage
@@ -80,8 +80,19 @@ struct UsageDetailView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 10) {
             header
+
+            switch resolvedProvider {
+            case .claude:
+                CostDashboardView(store: costStore)
+            case .codex:
+                Text("Cost history coming soon")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Divider().background(Color.white.opacity(0.08))
 
             ForEach(periods, id: \.title) { period in
                 UsagePeriodRowView(display: period)
@@ -93,17 +104,6 @@ struct UsageDetailView: View {
 
             if let codexCreditsUSD {
                 CodexCreditsRowView(remainingUSD: codexCreditsUSD)
-            }
-
-            Divider().background(Color.white.opacity(0.08))
-
-            switch resolvedProvider {
-            case .claude:
-                CostDashboardView(store: costStore)
-            case .codex:
-                Text("Cost history coming soon")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
         }
         .padding(.top, 8)
