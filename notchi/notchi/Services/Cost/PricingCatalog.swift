@@ -152,13 +152,13 @@ nonisolated final class PricingCatalog: ClaudePricingProviding, @unchecked Senda
         }
 
         guard Self.isPlausibleRefresh(updated) else { return }
-        replaceTable(updated)
-        persistSnapshot(updated)
+        persistSnapshot(mergeIntoTable(updated))
     }
 
-    private func replaceTable(_ updated: [String: ClaudeModelPricing]) {
+    private func mergeIntoTable(_ updated: [String: ClaudeModelPricing]) -> [String: ClaudeModelPricing] {
         lock.lock(); defer { lock.unlock() }
-        table = updated
+        table.merge(updated) { _, new in new }
+        return table
     }
 
     private func persistSnapshot(_ updated: [String: ClaudeModelPricing]) {

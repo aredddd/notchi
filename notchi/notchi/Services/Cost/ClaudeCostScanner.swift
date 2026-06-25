@@ -8,6 +8,13 @@ final class ClaudeCostScanner {
 
     nonisolated(unsafe) private var seen = Set<String>()
 
+    nonisolated(unsafe) private let isoFractional: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    nonisolated(unsafe) private let isoPlain = ISO8601DateFormatter()
+
     nonisolated init(projectsRoots: [URL], pricing: any ClaudePricingProviding, windowDays: Int, calendar: Calendar) {
         self.projectsRoots = projectsRoots
         self.pricing = pricing
@@ -121,8 +128,6 @@ final class ClaudeCostScanner {
     nonisolated private func intval(_ v: Any?) -> Int { (v as? NSNumber)?.intValue ?? 0 }
 
     nonisolated private func parseTimestamp(_ s: String) -> Date? {
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return iso.date(from: s) ?? ISO8601DateFormatter().date(from: s)
+        isoFractional.date(from: s) ?? isoPlain.date(from: s)
     }
 }
